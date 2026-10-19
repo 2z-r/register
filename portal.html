@@ -36,6 +36,20 @@
   .tile .name { font-size: 22px; font-weight: 600; }
   footer { padding: 12px 24px 20px; font-size: 13px; color: var(--muted); text-align: center; }
   #offline-status.ok { color: #276749; }
+  details.xfer { margin: 14px auto 0; max-width: 560px; text-align: left; background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px; }
+  details.xfer summary { cursor: pointer; font-weight: 600; color: var(--text); font-size: 14px; }
+  details.xfer h2 { font-size: 13px; margin: 14px 0 4px; color: var(--text); }
+  details.xfer p { font-size: 12px; line-height: 1.6; color: var(--muted); }
+  details.xfer textarea { width: 100%; height: 84px; margin-top: 6px; padding: 8px; font-size: 12px; font-family: monospace; border: 1px solid var(--border); border-radius: 8px; resize: vertical; }
+  details.xfer button { margin-top: 6px; padding: 9px 14px; border: 0; border-radius: 8px; background: #2D3748; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; }
+  details.xfer .warn { color: #C53030; }
+  details.xfer input, details.xfer select { width: 100%; margin-top: 6px; padding: 9px; font-size: 14px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+  details.xfer .row { display: flex; gap: 8px; }
+  details.xfer .row button { flex: 1; }
+  details.xfer button.sub { background: #fff; color: #C53030; border: 1px solid #C53030; }
+  #pin-status { font-size: 13px; line-height: 1.8; margin-top: 8px; }
+  #pin-msg { margin-top: 8px; font-size: 12px; white-space: pre-wrap; }
+  #xfer-msg { margin-top: 8px; font-size: 12px; white-space: pre-wrap; }
 </style>
 </head>
 <body>
@@ -46,6 +60,32 @@
   <main><div class="grid" id="grid"></div></main>
   <footer>
     <div id="offline-status">オフライン準備を確認中…</div>
+    <details class="xfer">
+      <summary>PINの設定（店舗ごと）</summary>
+      <p>PINを設定した店舗は、レジを開くたびにPINの入力が必要になります。うっかり操作や、関係者以外が触るのを防ぐための鍵で、強力な防御ではありません。端末本体の画面ロックも、あわせて使ってください。</p>
+      <div id="pin-status"></div>
+      <h2>設定・変更・解除</h2>
+      <select id="pin-store"></select>
+      <input type="password" id="pin-cur" inputmode="numeric" maxlength="8" autocomplete="off" placeholder="現在のPIN（設定済みの店舗のみ）">
+      <input type="password" id="pin-new" inputmode="numeric" maxlength="8" autocomplete="off" placeholder="新しいPIN（4〜8桁の数字）">
+      <input type="password" id="pin-new2" inputmode="numeric" maxlength="8" autocomplete="off" placeholder="新しいPIN（もう一度）">
+      <div class="row"><button type="button" id="pin-set">設定する</button><button type="button" id="pin-clear" class="sub">解除する</button></div>
+      <div id="pin-msg"></div>
+      <p><span class="warn">PINを忘れたときは</span>、Chromeの設定でこのサイトのデータを消すとリセットできますが、履歴も消えます。本番の前に、取引は必ず送信しておいてください。</p>
+    </details>
+    <details class="xfer">
+      <summary>設定の引き継ぎ（準備用）</summary>
+      <h2>書き出す</h2>
+      <p>この端末の、店舗ごとの商品構成・スプレッドシート連携URL・PINを、1つの文字列にまとめます。履歴・売上は含みません。PINを設定した店舗は、書き出し・読み込みのときにそのPINを入力します。<span class="warn">連携URLが入るため、人目に付く場所には貼らないでください。</span></p>
+      <button type="button" id="xfer-export">書き出す</button>
+      <textarea id="xfer-out" readonly placeholder="ここに表示されます"></textarea>
+      <button type="button" id="xfer-copy">コピー</button>
+      <h2>読み込む</h2>
+      <p>別の端末で書き出した文字列を貼り付けて読み込みます。同じ店舗の商品構成・連携URL・PINが<b>置き換わります</b>。すでに履歴がある店舗は、集計がずれるため読み込みません。</p>
+      <textarea id="xfer-in" placeholder="書き出した文字列を貼り付け"></textarea>
+      <button type="button" id="xfer-import">読み込む</button>
+      <div id="xfer-msg"></div>
+    </details>
   </footer>
 
 <script>
@@ -89,6 +129,186 @@ async function checkOffline() {
   } catch (e) { st.textContent = ''; }
 }
 checkOffline();
+
+
+const PIN_P = 'register_pin_', PINFAIL_P = 'register_pinfail_';
+const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
+const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+async function pinHash(pin, salt, iter) {
+  const k = await crypto.subtle.importKey('raw', new TextEncoder().encode(pin), 'PBKDF2', false, ['deriveBits']);
+  return crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: salt, iterations: iter }, k, 256);
+}
+async function pinMake(pin) {
+  const salt = crypto.getRandomValues(new Uint8Array(16)), iter = 100000;
+  return { v: 1, s: b64(salt), h: b64(await pinHash(pin, salt, iter)), n: iter };
+}
+function pinRec(id) {
+  try { const r = JSON.parse(localStorage.getItem(PIN_P + id) || 'null'); return (r && r.s && r.h && r.n) ? r : null; }
+  catch (e) { return null; }
+}
+function pinWait(id) {
+  try { const f = JSON.parse(localStorage.getItem(PINFAIL_P + id) || 'null'); return (f && f.until > Date.now()) ? Math.ceil((f.until - Date.now()) / 1000) : 0; }
+  catch (e) { return 0; }
+}
+// 戻り値：'ok' / 'ng' / 'wait:秒'（3回続けて間違えると、少しずつ待ち時間が延びる）
+async function pinTry(id, pin) {
+  const w = pinWait(id); if (w > 0) return 'wait:' + w;
+  const rec = pinRec(id); if (!rec) return 'ok';
+  let match = false;
+  try { match = b64(await pinHash(String(pin), unb64(rec.s), rec.n)) === rec.h; } catch (e) { match = false; }
+  if (match) { localStorage.removeItem(PINFAIL_P + id); return 'ok'; }
+  let f; try { f = JSON.parse(localStorage.getItem(PINFAIL_P + id) || 'null') || { count: 0, until: 0 }; } catch (e) { f = { count: 0, until: 0 }; }
+  f.count++;
+  if (f.count >= 3) f.until = Date.now() + Math.min(300, 30 * Math.pow(2, f.count - 3)) * 1000;
+  localStorage.setItem(PINFAIL_P + id, JSON.stringify(f));
+  return 'ng';
+}
+
+function storeLabel(id) { const x = STORES.find(t => t.id === id); return x ? x.label : '店舗' + id.toUpperCase(); }
+const cryptoOK = !!(window.crypto && crypto.subtle);
+
+// ── PINの設定 ──
+const pmsg = document.getElementById('pin-msg');
+const pinSel = document.getElementById('pin-store');
+STORES.forEach(t => { const o = document.createElement('option'); o.value = t.id; o.textContent = t.label; pinSel.appendChild(o); });
+function refreshPinStatus() {
+  document.getElementById('pin-status').textContent = STORES.map(t => t.label + '：' + (pinRec(t.id) ? 'PINあり' : 'なし')).join('　');
+}
+refreshPinStatus();
+function tryMsg(r) { return r.startsWith('wait:') ? '間違いが続いたため、あと' + r.slice(5) + '秒お待ちください' : '現在のPINが違います'; }
+function clearPinInputs() { ['pin-cur', 'pin-new', 'pin-new2'].forEach(i => document.getElementById(i).value = ''); }
+document.getElementById('pin-set').addEventListener('click', async () => {
+  if (!cryptoOK) { pmsg.textContent = 'この環境ではPINを設定できません（HTTPSで開いてください）'; return; }
+  const id = pinSel.value, cur = document.getElementById('pin-cur').value;
+  const n1 = document.getElementById('pin-new').value, n2 = document.getElementById('pin-new2').value;
+  if (!/^\d{4,8}$/.test(n1)) { pmsg.textContent = '新しいPINは、4〜8桁の数字にしてください。'; return; }
+  if (n1 !== n2) { pmsg.textContent = '確認用のPINが一致しません。'; return; }
+  if (pinRec(id)) { const r = await pinTry(id, cur); if (r !== 'ok') { pmsg.textContent = tryMsg(r); return; } }
+  try {
+    localStorage.setItem(PIN_P + id, JSON.stringify(await pinMake(n1)));
+    localStorage.removeItem(PINFAIL_P + id);
+    pmsg.textContent = storeLabel(id) + ' のPINを設定しました。'; clearPinInputs(); refreshPinStatus();
+  } catch (e) { pmsg.textContent = '保存に失敗しました：' + e.message; }
+});
+document.getElementById('pin-clear').addEventListener('click', async () => {
+  const id = pinSel.value;
+  if (!pinRec(id)) { pmsg.textContent = storeLabel(id) + ' にはPINが設定されていません。'; return; }
+  if (!cryptoOK) { pmsg.textContent = 'この環境ではPINを確認できません（HTTPSで開いてください）'; return; }
+  const r = await pinTry(id, document.getElementById('pin-cur').value);
+  if (r !== 'ok') { pmsg.textContent = tryMsg(r); return; }
+  localStorage.removeItem(PIN_P + id); localStorage.removeItem(PINFAIL_P + id);
+  pmsg.textContent = storeLabel(id) + ' のPINを解除しました。'; clearPinInputs(); refreshPinStatus();
+});
+
+// PINが設定された店舗の設定を操作するとき、そのPINを確認する
+async function askPin(id) {
+  if (!pinRec(id)) return true;
+  if (!cryptoOK) return false;
+  const v = prompt(storeLabel(id) + ' のPINを入力してください（キャンセルで、この店舗は対象外になります）');
+  if (v === null) return false;
+  return (await pinTry(id, v)) === 'ok';
+}
+
+// ── 設定の引き継ぎ（商品構成＋スプレッドシート連携URL＋PIN。履歴は対象外） ──
+const XFER_PREFIX = 'REGISTER1:';
+const PROD_P = 'register_products_v1_', GAS_P = 'register_gas_url_', LOG_P = 'register_sales_v1_';
+const xmsg = document.getElementById('xfer-msg');
+function say(t) { xmsg.textContent = t; }
+function enc(obj) { return XFER_PREFIX + btoa(unescape(encodeURIComponent(JSON.stringify(obj)))); }
+function dec(text) {
+  const t = String(text || '').replace(/\s+/g, '');
+  if (!t.startsWith(XFER_PREFIX)) throw new Error('形式が違います（先頭が REGISTER1: ではありません）');
+  try { return JSON.parse(decodeURIComponent(escape(atob(t.slice(XFER_PREFIX.length))))); }
+  catch (e) { throw new Error('文字列が途中で切れているか、壊れています（コピーし直してください）'); }
+}
+function validProducts(a) {
+  return Array.isArray(a) && a.length > 0 && a.length <= 200 && a.every(p =>
+    p && Number.isInteger(p.id) && typeof p.name === 'string' && p.name.length <= 100 && Number.isFinite(p.price));
+}
+function validPin(r) {
+  return r && r.v === 1 && typeof r.s === 'string' && typeof r.h === 'string' && Number.isInteger(r.n) && r.n >= 1000 && r.n <= 1000000;
+}
+function hasHistory(id) {
+  try { const d = JSON.parse(localStorage.getItem(LOG_P + id) || 'null'); return !!(d && d.salesLog && d.salesLog.length); }
+  catch (e) { return false; }
+}
+document.getElementById('xfer-export').addEventListener('click', async () => {
+  const stores = {};
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      let id = null, kind = null;
+      if (k.startsWith(PROD_P)) { id = k.slice(PROD_P.length); kind = 'products'; }
+      else if (k.startsWith(GAS_P)) { id = k.slice(GAS_P.length); kind = 'gas'; }
+      else if (k.startsWith(PIN_P)) { id = k.slice(PIN_P.length); kind = 'pin'; }
+      if (!id) continue;
+      stores[id] = stores[id] || {};
+      if (kind === 'products') stores[id].products = JSON.parse(localStorage.getItem(k));
+      else if (kind === 'pin') stores[id].pin = JSON.parse(localStorage.getItem(k));
+      else stores[id].gas = localStorage.getItem(k) || '';
+    }
+  } catch (e) { say('書き出しに失敗しました：' + e.message); return; }
+  const skipped = [];
+  for (const id of Object.keys(stores)) {
+    if (pinRec(id) && !(await askPin(id))) { delete stores[id]; skipped.push(storeLabel(id)); }
+  }
+  const ids = Object.keys(stores);
+  if (!ids.length) { say(skipped.length ? 'PINが確認できなかったため、書き出せる店舗がありません。' : '書き出せる設定がありません。先に、店舗のレジで商品やURLを設定してください。'); return; }
+  document.getElementById('xfer-out').value = enc({ v: 1, stores });
+  say('書き出しました（' + ids.map(storeLabel).join('・') + '）。「コピー」を押して、別の端末に送ってください。'
+    + (skipped.length ? '\n※PINが確認できなかった店舗は含めていません：' + skipped.join('、') : ''));
+});
+document.getElementById('xfer-copy').addEventListener('click', async () => {
+  const ta = document.getElementById('xfer-out');
+  if (!ta.value) { say('先に「書き出す」を押してください。'); return; }
+  try { await navigator.clipboard.writeText(ta.value); say('コピーしました。'); }
+  catch (e) { ta.focus(); ta.select(); say('選択しました。長押しなどでコピーしてください。'); }
+});
+document.getElementById('xfer-import').addEventListener('click', async () => {
+  let data;
+  try { data = dec(document.getElementById('xfer-in').value); }
+  catch (e) { say('読み込めません：' + (e.message || '文字列が壊れています') + '\n何も変更していません。'); return; }
+  if (!data || data.v !== 1 || !data.stores || typeof data.stores !== 'object') { say('読み込めません：内容が正しくありません。\n何も変更していません。'); return; }
+
+  const ok = [], skipped = [], bad = [];
+  Object.keys(data.stores).forEach(id => {
+    const st = data.stores[id] || {};
+    if (!/^[A-Za-z0-9_-]{1,20}$/.test(id)) { bad.push(id); return; }
+    if (st.products !== undefined && !validProducts(st.products)) { bad.push(id); return; }
+    if (st.gas !== undefined && !(typeof st.gas === 'string' && (st.gas === '' || /^https:\/\//.test(st.gas)))) { bad.push(id); return; }
+    if (st.pin !== undefined && !validPin(st.pin)) { bad.push(id); return; }
+    if (st.products !== undefined && hasHistory(id)) { skipped.push(id); return; }
+    ok.push(id);
+  });
+  if (bad.length) { say('読み込めません：店舗「' + bad.join('、') + '」の内容が正しくありません。\n何も変更していません。'); return; }
+  if (!ok.length) { say('読み込める店舗がありません。' + (skipped.length ? '\n履歴がある店舗は読み込みません：' + skipped.join('、') : '')); return; }
+
+  const lines = ok.map(id => '・' + storeLabel(id) + '：商品' + ((data.stores[id].products || []).length) + '件'
+    + (data.stores[id].gas ? '、連携URLあり' : '') + (data.stores[id].pin ? '、PINあり' : ''));
+  let msg = '次の設定で、この端末の同じ店舗の設定を置き換えます。\n' + lines.join('\n');
+  if (skipped.length) msg += '\n\n※履歴がある店舗は読み込みません：' + skipped.join('、');
+  if (!confirm(msg + '\n\nよろしいですか？')) { say('キャンセルしました。何も変更していません。'); return; }
+
+  // この端末で、すでにPINが設定されている店舗は、そのPINを確認してから置き換える
+  const applied = [], pinSkipped = [];
+  for (const id of ok) {
+    if (pinRec(id) && !(await askPin(id))) { pinSkipped.push(storeLabel(id)); continue; }
+    applied.push(id);
+  }
+  try {
+    applied.forEach(id => {
+      const st = data.stores[id];
+      if (st.products !== undefined) localStorage.setItem(PROD_P + id, JSON.stringify(st.products));
+      if (st.gas !== undefined) localStorage.setItem(GAS_P + id, st.gas);
+      if (st.pin !== undefined) { localStorage.setItem(PIN_P + id, JSON.stringify(st.pin)); localStorage.removeItem(PINFAIL_P + id); }
+    });
+    say((applied.length ? '読み込みました：' + applied.map(storeLabel).join('・') : '読み込んだ店舗はありません。')
+      + (skipped.length ? '\n（履歴がある店舗は読み込んでいません：' + skipped.join('、') + '）' : '')
+      + (pinSkipped.length ? '\n（PINが確認できなかった店舗は読み込んでいません：' + pinSkipped.join('、') + '）' : ''));
+    document.getElementById('xfer-in').value = '';
+    refreshPinStatus();
+  } catch (e) { say('保存に失敗しました：' + e.message); }
+});
 </script>
 </body>
 </html>

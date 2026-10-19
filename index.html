@@ -41,6 +41,13 @@
     .products-panel { border-right: 1px solid var(--border); }
   }
   .app-header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 16px; display: flex; align-items: center; justify-content: space-between; height: 56px; flex-shrink: 0; }
+  #lock { position: fixed; inset: 0; z-index: 99999; background: var(--bg); display: none; align-items: center; justify-content: center; padding: 24px; }
+  .lock-box { width: 100%; max-width: 320px; text-align: center; }
+  .lock-title { font-size: 18px; font-weight: 700; margin-bottom: 16px; }
+  #lock-input { width: 100%; padding: 14px; font-size: 22px; text-align: center; letter-spacing: .3em; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface); color: var(--text); }
+  #lock-msg { min-height: 20px; margin: 10px 0; font-size: 13px; color: var(--danger); }
+  #lock-btn { width: 100%; padding: 14px; border: 0; border-radius: var(--radius); background: var(--accent); color: #fff; font-size: 16px; font-weight: 700; cursor: pointer; }
+  .lock-back { display: inline-block; margin-top: 16px; font-size: 13px; color: var(--text-muted); text-decoration: none; }
   .back-link { display:inline-block; font-size: 12px; color: var(--text-muted); text-decoration: none; margin-bottom: 2px; }
   .app-title { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
   .header-date { font-size: 13px; color: var(--text-muted); }
@@ -161,6 +168,76 @@
 </style>
 </head>
 <body>
+<div id="lock">
+  <div class="lock-box">
+    <div class="lock-title" id="lock-title">PINを入力してください</div>
+    <input type="password" id="lock-input" inputmode="numeric" autocomplete="off" maxlength="8" placeholder="PIN">
+    <div id="lock-msg"></div>
+    <button type="button" id="lock-btn">開く</button>
+    <a class="lock-back" href="portal.html">◀ ポータルへ戻る</a>
+  </div>
+</div>
+<script>
+// ── PINロック：店舗にPINが設定されている場合、開くたびに入力が必要 ──
+(function () {
+  const LOCK_STORE = (new URLSearchParams(location.search).get('store') || 'default').trim() || 'default';
+  const LOCK_LABEL = (new URLSearchParams(location.search).get('label') || '').trim();
+
+  const PIN_P = 'register_pin_', PINFAIL_P = 'register_pinfail_';
+  const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
+  const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+  async function pinHash(pin, salt, iter) {
+    const k = await crypto.subtle.importKey('raw', new TextEncoder().encode(pin), 'PBKDF2', false, ['deriveBits']);
+    return crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: salt, iterations: iter }, k, 256);
+  }
+  async function pinMake(pin) {
+    const salt = crypto.getRandomValues(new Uint8Array(16)), iter = 100000;
+    return { v: 1, s: b64(salt), h: b64(await pinHash(pin, salt, iter)), n: iter };
+  }
+  function pinRec(id) {
+    try { const r = JSON.parse(localStorage.getItem(PIN_P + id) || 'null'); return (r && r.s && r.h && r.n) ? r : null; }
+    catch (e) { return null; }
+  }
+  function pinWait(id) {
+    try { const f = JSON.parse(localStorage.getItem(PINFAIL_P + id) || 'null'); return (f && f.until > Date.now()) ? Math.ceil((f.until - Date.now()) / 1000) : 0; }
+    catch (e) { return 0; }
+  }
+  // 戻り値：'ok' / 'ng' / 'wait:秒'（3回続けて間違えると、少しずつ待ち時間が延びる）
+  async function pinTry(id, pin) {
+    const w = pinWait(id); if (w > 0) return 'wait:' + w;
+    const rec = pinRec(id); if (!rec) return 'ok';
+    let match = false;
+    try { match = b64(await pinHash(String(pin), unb64(rec.s), rec.n)) === rec.h; } catch (e) { match = false; }
+    if (match) { localStorage.removeItem(PINFAIL_P + id); return 'ok'; }
+    let f; try { f = JSON.parse(localStorage.getItem(PINFAIL_P + id) || 'null') || { count: 0, until: 0 }; } catch (e) { f = { count: 0, until: 0 }; }
+    f.count++;
+    if (f.count >= 3) f.until = Date.now() + Math.min(300, 30 * Math.pow(2, f.count - 3)) * 1000;
+    localStorage.setItem(PINFAIL_P + id, JSON.stringify(f));
+    return 'ng';
+  }
+  
+  const el = document.getElementById('lock'), inp = document.getElementById('lock-input'),
+        msg = document.getElementById('lock-msg'), btn = document.getElementById('lock-btn');
+  function showLock() {
+    if (!pinRec(LOCK_STORE)) return;
+    document.getElementById('lock-title').textContent = (LOCK_LABEL ? LOCK_LABEL + ' の' : '') + 'PINを入力してください';
+    el.style.display = 'flex'; inp.value = ''; msg.textContent = '';
+    document.documentElement.style.overflow = 'hidden';
+    setTimeout(() => inp.focus(), 50);
+  }
+  async function submit() {
+    if (!(window.crypto && crypto.subtle)) { msg.textContent = 'この環境ではPINを確認できません（HTTPSで開いてください）'; return; }
+    const r = await pinTry(LOCK_STORE, inp.value);
+    if (r === 'ok') { el.style.display = 'none'; document.documentElement.style.overflow = ''; inp.value = ''; }
+    else if (r.startsWith('wait:')) { msg.textContent = '間違いが続いたため、あと' + r.slice(5) + '秒お待ちください'; inp.value = ''; }
+    else { msg.textContent = 'PINが違います'; inp.value = ''; inp.focus(); }
+  }
+  btn.addEventListener('click', submit);
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+  window.addEventListener('pageshow', e => { if (e.persisted) showLock(); });   // 戻るボタンで復元された場合も再ロック
+  showLock();
+})();
+</script>
 <div class="app">
   <header class="app-header">
     <div>
