@@ -148,7 +148,10 @@
   .pm-row input[type="text"] { flex: 2; min-width: 0; padding: 8px 9px; border: 1px solid var(--border-strong); border-radius: var(--radius); font-size: 13px; background: var(--surface); color: var(--text); }
   .pm-row input[type="number"] { flex: 1; min-width: 0; padding: 8px 9px; border: 1px solid var(--border-strong); border-radius: var(--radius); font-size: 13px; background: var(--surface); color: var(--text); text-align: right; }
   .pm-del { padding: 7px 11px; border: 1px solid var(--danger); border-radius: var(--radius); background: transparent; color: var(--danger); font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
-  .pm-add-row { display: flex; gap: 8px; margin-bottom: 18px; }
+  .pm-sign { padding: 7px 10px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface); color: var(--text); font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+  .pm-neg { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--danger); font-weight: 600; white-space: nowrap; }
+  .prod-price.neg { color: var(--danger); }
+  .pm-add-row { display: flex; gap: 8px; margin-bottom: 18px; align-items: center; }
   .pm-add-row input[type="text"] { flex: 2; min-width: 0; }
   .pm-add-row input[type="number"] { flex: 1; min-width: 0; }
   .pm-add-row input { padding: 10px; border: 1px solid var(--border-strong); border-radius: var(--radius); font-size: 13px; background: var(--surface); color: var(--text); }
@@ -232,6 +235,7 @@
       <div class="pm-add-row">
         <input type="text" id="pm-new-name" placeholder="商品名">
         <input type="number" id="pm-new-price" placeholder="価格" inputmode="numeric">
+        <label class="pm-neg"><input type="checkbox" id="pm-new-neg">値引き（−）</label>
         <button class="pm-add-btn" onclick="addProduct()">＋ 追加</button>
       </div>
       <div class="section-label">スプレッドシート連携URL</div>
@@ -315,18 +319,23 @@ function saveProducts() {
 function nextProductId() {
   return PRODUCTS.reduce((m,p)=>Math.max(m,p.id), 0) + 1;
 }
+// 金額の表示（マイナスは −¥100 の形）
+function yen(n) { return (n < 0 ? '−¥' : '¥') + Math.abs(n).toLocaleString(); }
+
 function addProduct() {
   const nameEl = document.getElementById('pm-new-name');
   const priceEl = document.getElementById('pm-new-price');
   const name = nameEl.value.trim();
-  const price = parseInt(priceEl.value, 10);
+  let price = parseInt(priceEl.value, 10);
   if (!name) { alert('商品名を入力してください。'); return; }
-  if (!Number.isFinite(price) || price < 0) { alert('価格を正しく入力してください。'); return; }
+  if (!Number.isFinite(price)) { alert('価格を正しく入力してください。'); return; }
+  const negEl = document.getElementById('pm-new-neg');
+  if (negEl && negEl.checked) price = -Math.abs(price);   // 「値引き（−）」にチェックでマイナス価格
   const id = nextProductId();
   PRODUCTS.push({ id, name, price });
   productTotals[id] = { qty: 0, amount: 0 };
   saveProducts();
-  nameEl.value = ''; priceEl.value = '';
+  nameEl.value = ''; priceEl.value = ''; if (negEl) negEl.checked = false;
   renderProducts();
   renderProductManager();
   renderSummary();
@@ -340,11 +349,21 @@ function updateProductField(id, field, value) {
     p.name = v;
   } else if (field === 'price') {
     const v = parseInt(value, 10);
-    if (!Number.isFinite(v) || v < 0) return;
+    if (!Number.isFinite(v)) return;
     p.price = v;
   }
   saveProducts();
   renderProducts();
+  renderSummary();
+}
+function toggleProductSign(id) {
+  const p = PRODUCTS.find(x => x.id === id);
+  if (!p) return;
+  p.price = -p.price;
+  saveProducts();
+  renderProducts();
+  renderProductManager();
+  renderCart();
   renderSummary();
 }
 function deleteProduct(id) {
@@ -366,6 +385,7 @@ function renderProductManager() {
   card.innerHTML = PRODUCTS.map(p => `<div class="pm-row">
     <input type="text" value="${p.name}" onchange="updateProductField(${p.id},'name',this.value)">
     <input type="number" value="${p.price}" inputmode="numeric" onchange="updateProductField(${p.id},'price',this.value)">
+    <button class="pm-sign" onclick="toggleProductSign(${p.id})" title="プラス/マイナスを切り替え">±</button>
     <button class="pm-del" onclick="deleteProduct(${p.id})">削除</button>
   </div>`).join('');
 }
@@ -411,7 +431,7 @@ refreshHeaderStat();
 
 function refreshHeaderStat() {
   const total = salesLog.reduce((s, l) => s + l.total, 0);
-  document.getElementById('header-stat').textContent = '本日 ¥' + total.toLocaleString();
+  document.getElementById('header-stat').textContent = '本日 ' + yen(total);
 }
 
 // ── Pages ──
@@ -430,7 +450,7 @@ function renderProducts() {
   document.getElementById('prod-grid').innerHTML = PRODUCTS.map(p =>
     `<button class="prod-btn" onclick="addToCart(${p.id})">
       <div class="prod-name">${p.name}</div>
-      <div class="prod-price">¥${p.price.toLocaleString()}</div>
+      <div class="prod-price${p.price<0?' neg':''}">${yen(p.price)}</div>
     </button>`
   ).join('');
 }
@@ -449,7 +469,8 @@ function renderCart() {
   let qty=0, sub=0, html='';
   ids.forEach(id => {
     const p=PRODUCTS.find(x=>x.id==id), q=cart[id];
-    qty+=q; sub+=p.price*q;
+    if (p.price >= 0) qty+=q;   // 値引き（マイナス価格）は点数に数えない
+    sub+=p.price*q;
     html+=`<div class="cart-item">
       <span class="ci-name">${p.name}</span>
       <div class="qty-ctrl">
@@ -457,7 +478,7 @@ function renderCart() {
         <span class="qty-num">${q}</span>
         <button class="qty-btn" onclick="changeQty(${id},1)">＋</button>
       </div>
-      <span class="ci-price">¥${(p.price*q).toLocaleString()}</span>
+      <span class="ci-price">${yen((p.price*q))}</span>
     </div>`;
   });
   list.innerHTML = html;
@@ -466,8 +487,8 @@ function renderCart() {
 
 function updateTotals(qty, sub) {
   document.getElementById('t-qty').textContent = qty;
-  document.getElementById('t-sub').textContent = '¥'+sub.toLocaleString();
-  document.getElementById('t-grand').textContent = '¥'+sub.toLocaleString();
+  document.getElementById('t-sub').textContent = yen(sub);
+  document.getElementById('t-grand').textContent = yen(sub);
   updateChange();
 }
 
@@ -490,7 +511,7 @@ function updateChange() {
   row.style.display = 'flex';
   if (change >= 0) {
     row.className = 'change-row ok';
-    val.textContent = '¥' + change.toLocaleString();
+    val.textContent = yen(change);
   } else {
     row.className = 'change-row short';
     val.textContent = '不足 ¥' + Math.abs(change).toLocaleString();
@@ -514,6 +535,7 @@ function clearCart() { cart={}; renderCart(); resetPay(); }
 function checkout() {
   const ids = Object.keys(cart);
   if (!ids.length) return;
+  if (currentTotal() < 0) { alert('合計がマイナスです。商品を追加するか、値引きを減らしてください。'); return; }
   const payEl = document.getElementById('pay-input');
   const payVal = payEl.value;
   if (payVal !== '') {
@@ -590,6 +612,7 @@ function addEditItem(productId) {
 function saveEdit() {
   if (!editDraft) return;
   if (!editDraft.items.length) { alert('商品が1つもありません。取り消す場合は「取消」を使ってください。'); return; }
+  if (editDraftTotal() < 0) { alert('合計がマイナスです。商品を追加するか、値引きを減らしてください。'); return; }
   const idx = salesLog.findIndex(x => x.id === editDraft.id);
   if (idx === -1) { editDraft = null; renderHistory(); return; }
   const l = salesLog[idx];
@@ -628,7 +651,7 @@ function saveEdit() {
 function renderHistory() {
   const total = salesLog.reduce((s,l)=>s+l.total,0);
   document.getElementById('h-count').textContent = salesLog.length+' 件';
-  document.getElementById('h-total').textContent = '¥'+total.toLocaleString();
+  document.getElementById('h-total').textContent = yen(total);
   const wrap = document.getElementById('log-wrap');
   if (!salesLog.length) { wrap.innerHTML='<div class="empty-state">まだ取引がありません</div>'; return; }
   wrap.innerHTML = `<div class="log-card">
@@ -646,19 +669,19 @@ function renderHistory() {
               <span class="qty-num">${item.qty}</span>
               <button class="qty-btn" onclick="editQtyChange(${idx},1)">＋</button>
             </div>
-            <span class="ci-price">¥${(item.price*item.qty).toLocaleString()}</span>
+            <span class="ci-price">${yen((item.price*item.qty))}</span>
           </div>`).join('')}
           ${availableToAdd.length ? `<select onchange="addEditItem(this.value); this.value='';" style="padding:8px;border:1px solid var(--border-strong);border-radius:8px;font-size:13px;background:var(--surface);color:var(--text);">
             <option value="">＋ 商品を追加</option>
-            ${availableToAdd.map(p=>`<option value="${p.id}">${p.name}（¥${p.price.toLocaleString()}）</option>`).join('')}
+            ${availableToAdd.map(p=>`<option value="${p.id}">${p.name}（${yen(p.price)}）</option>`).join('')}
           </select>` : ''}
           <div style="display:flex;align-items:center;gap:8px;">
             <span style="font-size:12px;color:var(--text-muted);min-width:48px;">預り金</span>
             <input type="number" inputmode="numeric" value="${editDraft.received}" oninput="editReceivedChange(this.value)" style="flex:1;padding:8px;border:1px solid var(--border-strong);border-radius:8px;font-size:14px;text-align:right;background:var(--surface);color:var(--text);">
           </div>
           <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:600;">
-            <span>合計 ¥${total.toLocaleString()}</span>
-            <span style="color:${change<0?'var(--danger)':'var(--success)'};">おつり ${change<0?'不足 ':''}¥${Math.abs(change).toLocaleString()}</span>
+            <span>合計 ${yen(total)}</span>
+            <span style="color:${change<0?'var(--danger)':'var(--success)'};">おつり ${change<0?'不足 ':''}${yen(Math.abs(change))}</span>
           </div>
           <div style="display:flex;gap:8px;">
             <button onclick="cancelEdit()" style="flex:1;padding:9px;border:1px solid var(--border-strong);border-radius:8px;background:var(--surface2);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;">キャンセル</button>
@@ -668,12 +691,12 @@ function renderHistory() {
       }
       const hasReceived = typeof l.received === 'number';
       const payInfo = hasReceived
-        ? `<span style="font-size:11px;color:var(--text-muted);display:block;margin-top:2px;">預り ¥${l.received.toLocaleString()}　おつり ¥${l.change.toLocaleString()}</span>`
+        ? `<span style="font-size:11px;color:var(--text-muted);display:block;margin-top:2px;">預り ${yen(l.received)}　おつり ${yen(l.change)}</span>`
         : '';
       return `<div class="log-row" style="align-items:flex-start;">
       <span class="log-time">${l.date} ${l.time}</span>
       <span class="log-items">${l.items.map(i=>i.name+'×'+i.qty).join('、')}${payInfo}</span>
-      <span class="log-total">¥${l.total.toLocaleString()}
+      <span class="log-total">${yen(l.total)}
         <span class="log-badge ${l.sent?'badge-sent':'badge-pending'}">${l.sent?'送信済':'未送信'}</span>
       </span>
       <button onclick="startEdit(${l.id})" style="margin-left:8px;padding:4px 10px;border:1px solid var(--border-strong);border-radius:6px;background:transparent;color:var(--text-muted);font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;">編集</button>
@@ -687,7 +710,7 @@ function cancelTransaction(id) {
   const idx = salesLog.findIndex(l => l.id === id);
   if (idx === -1) return;
   const l = salesLog[idx];
-  const label = `${l.date} ${l.time} ¥${l.total.toLocaleString()}`;
+  const label = `${l.date} ${l.time} ${yen(l.total)}`;
   if (!confirm(`この取引を取り消しますか？\n${label}\n${l.items.map(i=>i.name+'×'+i.qty).join('、')}`)) return;
   if (editDraft && editDraft.id === id) editDraft = null;
   // 集計から差し引く
@@ -767,26 +790,26 @@ async function syncToSheet() {
 // ── Summary ──
 function renderSummary() {
   const total = salesLog.reduce((s,l)=>s+l.total,0);
-  document.getElementById('s-total').textContent = '¥'+total.toLocaleString();
+  document.getElementById('s-total').textContent = yen(total);
   document.getElementById('s-count').textContent = salesLog.length+' 件';
   const sorted = PRODUCTS.map(p=>({...p,...productTotals[p.id]})).filter(p=>p.qty>0).sort((a,b)=>b.amount-a.amount);
   const barSec = document.getElementById('bar-section');
   if (!sorted.length) { barSec.innerHTML='<div class="empty-state">まだデータがありません</div>'; }
   else {
-    const max = sorted[0].amount;
+    const max = Math.max(sorted[0].amount, 1);
     barSec.innerHTML = sorted.map(p=>`<div class="bar-row">
       <span class="bar-name">${p.name}</span>
-      <div class="bar-track"><div class="bar-fill" style="width:${Math.round(p.amount/max*100)}%"></div></div>
-      <span class="bar-amount">¥${p.amount.toLocaleString()}</span>
+      <div class="bar-track"><div class="bar-fill" style="width:${Math.max(0, Math.round(p.amount/max*100))}%"></div></div>
+      <span class="bar-amount">${yen(p.amount)}</span>
     </div>`).join('');
   }
   const all = PRODUCTS.map(p=>({...p,...productTotals[p.id]})).sort((a,b)=>b.amount-a.amount);
-  const totalQty = all.reduce((s,p)=>s+p.qty,0);
+  const totalQty = all.filter(p=>p.price>=0).reduce((s,p)=>s+p.qty,0);
   document.getElementById('sum-tbody').innerHTML = all.map(p=>`<tr>
-    <td>${p.name}</td><td>${p.qty}</td><td>¥${p.amount.toLocaleString()}</td>
+    <td>${p.name}</td><td>${p.qty}</td><td>${yen(p.amount)}</td>
   </tr>`).join('');
   document.getElementById('sum-tfoot').innerHTML = `<tr>
-    <td>合計</td><td>${totalQty}</td><td>¥${total.toLocaleString()}</td>
+    <td>合計</td><td>${totalQty}</td><td>${yen(total)}</td>
   </tr>`;
 }
 
