@@ -1,0 +1,37 @@
+{
+  "id": "register-b",
+  "name": "レジ（店舗B）",
+  "short_name": "レジB",
+  "start_url": "./?store=b&label=%E5%BA%97%E8%88%97B",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#F7F6F3",
+  "theme_color": "#2F855A",
+  "icons": [
+    {
+      "src": "icon-b-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-b-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-b-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icon-b-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "id": "register-a",
+  "name": "レジ（店舗A）",
+  "short_name": "レジA",
+  "start_url": "./?store=a&label=%E5%BA%97%E8%88%97A",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#F7F6F3",
+  "theme_color": "#C05621",
+  "icons": [
+    {
+      "src": "icon-a-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-a-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-a-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icon-a-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

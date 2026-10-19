@@ -1,0 +1,820 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="レジ">
+<meta name="theme-color" content="#2B6CB0">
+<script>
+// ?store=a / ?store=b に応じて、店舗ごとのmanifest・アイコンを読み込む（ホーム画面追加時の名前・起動URLが店舗別になる）
+(function () {
+  var s = (new URLSearchParams(location.search).get('store') || '').trim();
+  var m = (s === 'a' || s === 'b') ? 'manifest-' + s + '.json' : 'manifest.json';
+  var l = document.createElement('link');
+  l.rel = 'manifest'; l.href = m;
+  document.head.appendChild(l);
+})();
+</script>
+<title>レジ</title>
+
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #F7F6F3; --surface: #FFFFFF; --surface2: #F0EEE9;
+    --border: #E2DFD8; --border-strong: #C8C4BB;
+    --text: #1A1916; --text-muted: #7A7870;
+    --accent: #2B6CB0; --accent-bg: #EBF4FF; --accent-text: #1A4F8A;
+    --success: #276749; --success-bg: #E6F6EE;
+    --danger: #C0392B; --danger-bg: #FDEDEC;
+    --warning: #92600A; --warning-bg: #FEF3C7;
+    --radius: 10px; --radius-lg: 14px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  html, body { height: 100%; background: var(--bg); font-family: -apple-system, 'Hiragino Sans', 'Yu Gothic UI', sans-serif; color: var(--text); -webkit-tap-highlight-color: transparent; }
+  .app { display: grid; grid-template-rows: auto 1fr auto; height: 100dvh; max-width: 1200px; margin: 0 auto; }
+  @media (min-width: 768px) {
+    .register-page { grid-template-columns: 1fr 380px; grid-template-rows: 1fr; }
+    .products-panel { border-right: 1px solid var(--border); }
+  }
+  .app-header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 16px; display: flex; align-items: center; justify-content: space-between; height: 56px; flex-shrink: 0; }
+  .back-link { display:inline-block; font-size: 12px; color: var(--text-muted); text-decoration: none; margin-bottom: 2px; }
+  .app-title { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+  .header-date { font-size: 13px; color: var(--text-muted); }
+  .header-stat { font-size: 13px; color: var(--accent-text); background: var(--accent-bg); padding: 4px 10px; border-radius: 20px; font-weight: 500; }
+  .tab-pages { flex: 1; overflow: hidden; position: relative; }
+  .tab-page { display: none; height: 100%; overflow-y: auto; }
+  .tab-page.active { display: block; }
+  .bottom-nav { background: var(--surface); border-top: 1px solid var(--border); display: flex; height: 60px; flex-shrink: 0; }
+  .nav-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; background: none; border: none; cursor: pointer; font-size: 11px; color: var(--text-muted); padding: 8px 0; }
+  .nav-btn.active { color: var(--accent); }
+  .nav-btn svg { width: 22px; height: 22px; stroke-width: 1.7; }
+  .register-page { display: grid; grid-template-rows: 1fr auto; height: 100%; }
+  .products-panel { overflow-y: auto; padding: 14px; }
+  .checkout-panel { background: var(--surface); border-top: 1px solid var(--border); padding: 14px; }
+  .section-label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 10px; }
+  .prod-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; margin-bottom: 16px; }
+  .prod-btn { background: var(--surface); border: 2px solid var(--border); border-radius: var(--radius-lg); padding: 24px 16px; text-align: center; cursor: pointer; transition: transform 0.1s, background 0.1s, border-color 0.1s; box-shadow: var(--shadow); display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .prod-btn:active { transform: scale(0.95); background: var(--accent-bg); border-color: var(--accent); }
+  .prod-name { font-size: 18px; font-weight: 700; color: var(--text); line-height: 1.3; }
+  .prod-price { font-size: 20px; font-weight: 800; color: var(--accent); letter-spacing: -0.02em; }
+  .cart-list { margin-bottom: 12px; }
+  .cart-empty { font-size: 13px; color: var(--text-muted); text-align: center; padding: 12px 0; }
+  .cart-item { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .cart-item:last-child { border-bottom: none; }
+  .ci-name { flex: 1; font-size: 14px; }
+  .qty-ctrl { display: flex; align-items: center; gap: 8px; }
+  .qty-btn { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--border-strong); background: var(--surface2); font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--text); line-height: 1; }
+  .qty-btn:active { background: var(--border); }
+  .qty-num { font-size: 15px; font-weight: 600; min-width: 22px; text-align: center; }
+  .ci-price { min-width: 70px; text-align: right; font-size: 14px; }
+  .totals-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+  .tot-cell { background: var(--surface2); border-radius: var(--radius); padding: 9px 10px; }
+  .tot-label { font-size: 11px; color: var(--text-muted); margin-bottom: 3px; }
+  .tot-val { font-size: 16px; font-weight: 600; }
+  .grand-total { display: flex; justify-content: space-between; align-items: center; background: var(--text); color: #fff; border-radius: var(--radius-lg); padding: 13px 16px; margin-bottom: 10px; }
+  .grand-label { font-size: 14px; font-weight: 500; opacity: .85; }
+  .grand-val { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
+  .action-row { display: flex; gap: 8px; }
+  .btn-clear { flex: 1; padding: 13px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface); font-size: 14px; font-weight: 600; cursor: pointer; color: var(--text-muted); }
+  .btn-clear:active { background: var(--surface2); }
+  .btn-pay { flex: 2.5; padding: 13px; border: none; border-radius: var(--radius); background: var(--accent); color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; letter-spacing: 0.02em; }
+  .btn-pay:active { opacity: .85; }
+  .toast { position: fixed; top: 70px; left: 50%; transform: translateX(-50%) translateY(-10px); background: var(--success-bg); color: var(--success); border: 1px solid #b2dfc7; border-radius: 30px; padding: 10px 22px; font-size: 14px; font-weight: 600; opacity: 0; pointer-events: none; transition: opacity .25s, transform .25s; white-space: nowrap; z-index: 100; }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .history-page, .summary-page { padding: 14px; }
+  .big-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 18px; }
+  .big-stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px; box-shadow: var(--shadow); }
+  .bs-label { font-size: 12px; color: var(--text-muted); margin-bottom: 6px; font-weight: 500; }
+  .bs-val { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; }
+  .log-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow); }
+  .log-row { display: flex; gap: 8px; padding: 11px 14px; border-bottom: 1px solid var(--border); font-size: 13px; align-items: center; }
+  .log-row:last-child { border-bottom: none; }
+  .log-time { min-width: 80px; color: var(--text-muted); font-weight: 500; }
+  .log-items { flex: 1; color: var(--text); }
+  .log-total { min-width: 72px; text-align: right; font-weight: 600; }
+  .log-badge { font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 10px; margin-left: 6px; white-space: nowrap; }
+  .badge-pending { background: var(--warning-bg); color: var(--warning); }
+  .badge-sent { background: var(--success-bg); color: var(--success); }
+  .bar-section { margin-bottom: 20px; }
+  .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; }
+  .bar-name { font-size: 13px; color: var(--text-muted); min-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar-track { flex: 1; background: var(--surface2); border-radius: 4px; height: 12px; overflow: hidden; }
+  .bar-fill { height: 12px; border-radius: 4px; background: var(--accent); transition: width .4s; }
+  .bar-amount { font-size: 13px; font-weight: 600; min-width: 72px; text-align: right; }
+  .sum-table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow); margin-bottom: 16px; }
+  .sum-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .sum-table th { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; padding: 10px 14px; background: var(--surface2); text-align: left; border-bottom: 1px solid var(--border); }
+  .sum-table th:not(:first-child) { text-align: right; }
+  .sum-table td { padding: 11px 14px; border-bottom: 1px solid var(--border); }
+  .sum-table td:not(:first-child) { text-align: right; }
+  .sum-table tbody tr:last-child td { border-bottom: none; }
+  .sum-table tfoot td { font-weight: 700; font-size: 14px; padding: 11px 14px; background: var(--surface2); border-top: 1px solid var(--border-strong); }
+  .sum-table tfoot td:not(:first-child) { text-align: right; }
+  .reset-btn { width: 100%; padding: 13px; border: 1px solid var(--danger); border-radius: var(--radius); background: transparent; color: var(--danger); font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 8px; }
+  .reset-btn:active { background: var(--danger-bg); }
+  .empty-state { text-align: center; padding: 32px 0; color: var(--text-muted); font-size: 14px; }
+
+  /* ── Sync UI ── */
+  .sync-bar { background: var(--surface); border-top: 1px solid var(--border); padding: 10px 14px; display: flex; align-items: center; gap: 10px; }
+  .sync-status { flex: 1; font-size: 13px; }
+  .sync-status.ok { color: var(--success); }
+  .sync-status.pending { color: var(--warning); }
+  .sync-status.error { color: var(--danger); }
+  .btn-sync { padding: 9px 18px; border: none; border-radius: var(--radius); background: var(--accent); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+  .btn-sync:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-sync:not(:disabled):active { opacity: .8; }
+  .url-setup { background: var(--warning-bg); border: 1px solid #F6C90E44; border-radius: var(--radius); padding: 12px 14px; margin: 14px; font-size: 13px; color: var(--warning); }
+  .url-setup input { width: 100%; margin-top: 8px; padding: 9px 10px; border: 1px solid var(--border-strong); border-radius: var(--radius); font-size: 13px; background: var(--surface); color: var(--text); }
+  .url-setup button { margin-top: 8px; padding: 8px 16px; background: var(--accent); color: #fff; border: none; border-radius: var(--radius); font-size: 13px; font-weight: 600; cursor: pointer; }
+
+  /* ── Payment (預かり金・おつり) ── */
+  .pay-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .pay-input { flex: 1; padding: 11px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius); font-size: 16px; font-weight: 600; background: var(--surface); color: var(--text); text-align: right; }
+  .pay-quick { display: flex; gap: 6px; margin-bottom: 10px; }
+  .pay-quick button { flex: 1; padding: 8px 0; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface2); font-size: 13px; font-weight: 600; color: var(--text); cursor: pointer; }
+  .pay-quick button:active { background: var(--border); }
+  .change-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 10px; border-radius: var(--radius); margin-bottom: 10px; font-size: 14px; font-weight: 600; }
+  .change-row.ok { background: var(--success-bg); color: var(--success); }
+  .change-row.short { background: var(--danger-bg); color: var(--danger); }
+  .change-row .cr-val { font-size: 17px; }
+
+  /* ── Product manager ── */
+  .pm-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow); margin-bottom: 14px; }
+  .pm-row { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+  .pm-row:last-child { border-bottom: none; }
+  .pm-row input[type="text"] { flex: 2; min-width: 0; padding: 8px 9px; border: 1px solid var(--border-strong); border-radius: var(--radius); font-size: 13px; background: var(--surface); color: var(--text); }
+  .pm-row input[type="number"] { flex: 1; min-width: 0; padding: 8px 9px; border: 1px solid var(--border-strong); border-radius: var(--radius); font-size: 13px; background: var(--surface); color: var(--text); text-align: right; }
+  .pm-del { padding: 7px 11px; border: 1px solid var(--danger); border-radius: var(--radius); background: transparent; color: var(--danger); font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .pm-add-row { display: flex; gap: 8px; margin-bottom: 18px; }
+  .pm-add-row input[type="text"] { flex: 2; min-width: 0; }
+  .pm-add-row input[type="number"] { flex: 1; min-width: 0; }
+  .pm-add-row input { padding: 10px; border: 1px solid var(--border-strong); border-radius: var(--radius); font-size: 13px; background: var(--surface); color: var(--text); }
+  .pm-add-btn { padding: 10px 16px; background: var(--accent); color: #fff; border: none; border-radius: var(--radius); font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="app-header">
+    <div>
+      <a class="back-link" href="portal.html">◀ ポータルへ</a>
+      <div class="app-title" id="app-title">レジ</div>
+      <div class="header-date" id="header-date"></div>
+    </div>
+    <div class="header-stat" id="header-stat">本日 ¥0</div>
+  </header>
+
+  <div class="tab-pages" id="tab-pages">
+    <!-- Register -->
+    <div class="tab-page active" id="page-register">
+      <div id="url-warning" class="url-setup" style="display:none;">
+        ⚠️ スプレッドシート連携URLが未設定です。「集計」タブから設定してください。
+      </div>
+      <div class="register-page">
+        <div class="products-panel">
+          <div class="section-label">商品</div>
+          <div class="prod-grid" id="prod-grid"></div>
+        </div>
+        <div class="checkout-panel">
+          <div class="section-label">カート</div>
+          <div class="cart-list" id="cart-list"><p class="cart-empty">商品をタップして追加</p></div>
+          <div class="totals-grid">
+            <div class="tot-cell"><div class="tot-label">点数</div><div class="tot-val" id="t-qty">0</div></div>
+            <div class="tot-cell"><div class="tot-label">合計</div><div class="tot-val" id="t-sub">¥0</div></div>
+          </div>
+          <div class="grand-total">
+            <span class="grand-label">お会計</span>
+            <span class="grand-val" id="t-grand">¥0</span>
+          </div>
+          <div class="pay-row">
+            <span class="tot-label" style="min-width:56px;">預かり</span>
+            <input class="pay-input" id="pay-input" type="number" inputmode="numeric" placeholder="0" oninput="updateChange()">
+          </div>
+          <div class="pay-quick">
+            <button onclick="setPayExact()">ちょうど</button>
+            <button onclick="setPayAmount(1000)">¥1000</button>
+            <button onclick="setPayAmount(5000)">¥5000</button>
+            <button onclick="setPayAmount(10000)">¥10000</button>
+          </div>
+          <div class="change-row ok" id="change-row" style="display:none;">
+            <span>おつり</span>
+            <span class="cr-val" id="change-val">¥0</span>
+          </div>
+          <div class="action-row">
+            <button class="btn-clear" onclick="clearCart()">クリア</button>
+            <button class="btn-pay" onclick="checkout()">会計する</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- History -->
+    <div class="tab-page history-page" id="page-history">
+      <div class="big-stats">
+        <div class="big-stat"><div class="bs-label">本日の取引件数</div><div class="bs-val" id="h-count">0 件</div></div>
+        <div class="big-stat"><div class="bs-label">本日の売上合計</div><div class="bs-val" id="h-total">¥0</div></div>
+      </div>
+      <div class="section-label">取引履歴</div>
+      <div id="log-wrap"><div class="empty-state">まだ取引がありません</div></div>
+    </div>
+
+    <!-- Summary -->
+    <div class="tab-page summary-page" id="page-summary">
+      <div class="big-stats">
+        <div class="big-stat"><div class="bs-label">総売上</div><div class="bs-val" id="s-total">¥0</div></div>
+        <div class="big-stat"><div class="bs-label">総取引数</div><div class="bs-val" id="s-count">0 件</div></div>
+      </div>
+      <div class="section-label">商品管理</div>
+      <div class="pm-card" id="pm-card"></div>
+      <div class="pm-add-row">
+        <input type="text" id="pm-new-name" placeholder="商品名">
+        <input type="number" id="pm-new-price" placeholder="価格" inputmode="numeric">
+        <button class="pm-add-btn" onclick="addProduct()">＋ 追加</button>
+      </div>
+      <div class="section-label">スプレッドシート連携URL</div>
+      <div style="margin-bottom:18px;">
+        <input id="gas-url-input" type="url" placeholder="https://script.google.com/macros/s/..." style="width:100%;padding:10px;border:1px solid var(--border-strong);border-radius:var(--radius);font-size:13px;background:var(--surface);color:var(--text);margin-bottom:6px;">
+        <button onclick="saveGasUrl()" style="padding:9px 18px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius);font-size:13px;font-weight:600;cursor:pointer;">URLを保存</button>
+        <span id="url-saved-msg" style="font-size:12px;color:var(--success);margin-left:10px;display:none;">✓ 保存しました</span>
+      </div>
+      <div class="section-label">商品別 売上ランキング</div>
+      <div class="bar-section" id="bar-section"><div class="empty-state">まだデータがありません</div></div>
+      <div class="section-label">商品別 詳細</div>
+      <div class="sum-table-wrap">
+        <table class="sum-table">
+          <thead><tr><th>商品名</th><th>個数</th><th>売上</th></tr></thead>
+          <tbody id="sum-tbody"></tbody>
+          <tfoot id="sum-tfoot"></tfoot>
+        </table>
+      </div>
+      <button class="reset-btn" onclick="confirmReset()">1日の集計をリセット</button>
+    </div>
+  </div>
+
+  <!-- Sync bar (履歴タブで表示) -->
+  <div class="sync-bar" id="sync-bar" style="display:none;">
+    <span class="sync-status" id="sync-status">—</span>
+    <button class="btn-sync" id="btn-sync" onclick="syncToSheet()">スプレッドシートに送信</button>
+  </div>
+
+  <nav class="bottom-nav">
+    <button class="nav-btn active" id="nav-register" onclick="showPage('register')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M8 10h8M8 14h4"/></svg>
+      レジ
+    </button>
+    <button class="nav-btn" id="nav-history" onclick="showPage('history')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>
+      履歴
+    </button>
+    <button class="nav-btn" id="nav-summary" onclick="showPage('summary')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+      集計
+    </button>
+  </nav></div>
+
+<div class="toast" id="toast">会計完了！</div>
+
+<script>
+const DEFAULT_PRODUCTS = [
+  {id:9, name:"焼きそば１",      price:500},
+  {id:10, name:"焼きそば２",     price:500},
+];
+
+// URLの ?store=xxx で店舗を区別する（例: index.html?store=a / index.html?store=b）。
+// ホーム画面にそれぞれ別アイコンとして追加すれば、同じ端末内でも完全に独立したデータで使える。
+const urlParams = new URLSearchParams(location.search);
+const STORE_ID = (urlParams.get('store') || 'default').trim() || 'default';
+const STORE_LABEL = (urlParams.get('label') || '').trim();
+
+const LS_KEY = 'register_sales_v1_' + STORE_ID;
+const GAS_KEY = 'register_gas_url_' + STORE_ID;
+const PROD_KEY = 'register_products_v1_' + STORE_ID;
+
+let PRODUCTS = [];
+let cart = {};
+let salesLog = [];   // { id, date, time, items, sub, tax, total, sent }
+let productTotals = {};
+
+// ── Products persistence ──
+function loadProducts() {
+  try {
+    const raw = localStorage.getItem(PROD_KEY);
+    PRODUCTS = raw ? JSON.parse(raw) : JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
+  } catch(e) {
+    PRODUCTS = JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
+  }
+  if (!Array.isArray(PRODUCTS) || !PRODUCTS.length) PRODUCTS = JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
+  PRODUCTS.forEach(p => { if (!productTotals[p.id]) productTotals[p.id] = {qty:0, amount:0}; });
+}
+function saveProducts() {
+  localStorage.setItem(PROD_KEY, JSON.stringify(PRODUCTS));
+}
+function nextProductId() {
+  return PRODUCTS.reduce((m,p)=>Math.max(m,p.id), 0) + 1;
+}
+function addProduct() {
+  const nameEl = document.getElementById('pm-new-name');
+  const priceEl = document.getElementById('pm-new-price');
+  const name = nameEl.value.trim();
+  const price = parseInt(priceEl.value, 10);
+  if (!name) { alert('商品名を入力してください。'); return; }
+  if (!Number.isFinite(price) || price < 0) { alert('価格を正しく入力してください。'); return; }
+  const id = nextProductId();
+  PRODUCTS.push({ id, name, price });
+  productTotals[id] = { qty: 0, amount: 0 };
+  saveProducts();
+  nameEl.value = ''; priceEl.value = '';
+  renderProducts();
+  renderProductManager();
+  renderSummary();
+}
+function updateProductField(id, field, value) {
+  const p = PRODUCTS.find(x => x.id === id);
+  if (!p) return;
+  if (field === 'name') {
+    const v = value.trim();
+    if (!v) return;
+    p.name = v;
+  } else if (field === 'price') {
+    const v = parseInt(value, 10);
+    if (!Number.isFinite(v) || v < 0) return;
+    p.price = v;
+  }
+  saveProducts();
+  renderProducts();
+  renderSummary();
+}
+function deleteProduct(id) {
+  const p = PRODUCTS.find(x => x.id === id);
+  if (!p) return;
+  if (PRODUCTS.length <= 1) { alert('商品は最低1つ必要です。'); return; }
+  if (!confirm(`「${p.name}」を削除しますか？\n（過去の取引履歴・集計データは残ります）`)) return;
+  PRODUCTS = PRODUCTS.filter(x => x.id !== id);
+  delete cart[id];
+  saveProducts();
+  renderProducts();
+  renderProductManager();
+  renderCart();
+  renderSummary();
+}
+function renderProductManager() {
+  const card = document.getElementById('pm-card');
+  if (!card) return;
+  card.innerHTML = PRODUCTS.map(p => `<div class="pm-row">
+    <input type="text" value="${p.name}" onchange="updateProductField(${p.id},'name',this.value)">
+    <input type="number" value="${p.price}" inputmode="numeric" onchange="updateProductField(${p.id},'price',this.value)">
+    <button class="pm-del" onclick="deleteProduct(${p.id})">削除</button>
+  </div>`).join('');
+}
+
+// ── Persistence ──
+function saveData() {
+  localStorage.setItem(LS_KEY, JSON.stringify({ salesLog, productTotals }));
+}
+function loadData() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return;
+    const d = JSON.parse(raw);
+    salesLog = d.salesLog || [];
+    productTotals = d.productTotals || {};
+    PRODUCTS.forEach(p => { if (!productTotals[p.id]) productTotals[p.id] = {qty:0, amount:0}; });
+  } catch(e) {}
+}
+function getGasUrl() { return localStorage.getItem(GAS_KEY) || ''; }
+function saveGasUrl() {
+  const val = document.getElementById('gas-url-input').value.trim();
+  localStorage.setItem(GAS_KEY, val);
+  const msg = document.getElementById('url-saved-msg');
+  msg.style.display = 'inline';
+  setTimeout(() => { msg.style.display = 'none'; }, 2000);
+  updateUrlWarning();
+}
+function updateUrlWarning() {
+  document.getElementById('url-warning').style.display = getGasUrl() ? 'none' : 'block';
+}
+
+// ── Init ──
+const nowD = new Date();
+document.getElementById('header-date').textContent =
+  nowD.getFullYear() + '年' + (nowD.getMonth()+1) + '月' + nowD.getDate() + '日';
+if (STORE_LABEL) document.getElementById('app-title').textContent = 'レジ（' + STORE_LABEL + '）';
+loadProducts();
+loadData();
+const savedUrl = getGasUrl();
+if (savedUrl) document.getElementById('gas-url-input').value = savedUrl;
+updateUrlWarning();
+refreshHeaderStat();
+
+function refreshHeaderStat() {
+  const total = salesLog.reduce((s, l) => s + l.total, 0);
+  document.getElementById('header-stat').textContent = '本日 ¥' + total.toLocaleString();
+}
+
+// ── Pages ──
+function showPage(name) {
+  document.querySelectorAll('.tab-page').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  document.getElementById('nav-' + name).classList.add('active');
+  document.getElementById('sync-bar').style.display = name === 'history' ? 'flex' : 'none';
+  if (name === 'history') { renderHistory(); updateSyncStatus(); }
+  if (name === 'summary') { renderSummary(); renderProductManager(); }
+}
+
+// ── Products ──
+function renderProducts() {
+  document.getElementById('prod-grid').innerHTML = PRODUCTS.map(p =>
+    `<button class="prod-btn" onclick="addToCart(${p.id})">
+      <div class="prod-name">${p.name}</div>
+      <div class="prod-price">¥${p.price.toLocaleString()}</div>
+    </button>`
+  ).join('');
+}
+
+function addToCart(id) { cart[id] = (cart[id]||0)+1; renderCart(); }
+function changeQty(id, d) {
+  cart[id] = (cart[id]||0)+d;
+  if (cart[id] <= 0) delete cart[id];
+  renderCart();
+}
+
+function renderCart() {
+  const list = document.getElementById('cart-list');
+  const ids = Object.keys(cart);
+  if (!ids.length) { list.innerHTML='<p class="cart-empty">商品をタップして追加</p>'; updateTotals(0,0); return; }
+  let qty=0, sub=0, html='';
+  ids.forEach(id => {
+    const p=PRODUCTS.find(x=>x.id==id), q=cart[id];
+    qty+=q; sub+=p.price*q;
+    html+=`<div class="cart-item">
+      <span class="ci-name">${p.name}</span>
+      <div class="qty-ctrl">
+        <button class="qty-btn" onclick="changeQty(${id},-1)">−</button>
+        <span class="qty-num">${q}</span>
+        <button class="qty-btn" onclick="changeQty(${id},1)">＋</button>
+      </div>
+      <span class="ci-price">¥${(p.price*q).toLocaleString()}</span>
+    </div>`;
+  });
+  list.innerHTML = html;
+  updateTotals(qty, sub);
+}
+
+function updateTotals(qty, sub) {
+  document.getElementById('t-qty').textContent = qty;
+  document.getElementById('t-sub').textContent = '¥'+sub.toLocaleString();
+  document.getElementById('t-grand').textContent = '¥'+sub.toLocaleString();
+  updateChange();
+}
+
+function currentTotal() {
+  return Object.keys(cart).reduce((s,id) => {
+    const p = PRODUCTS.find(x=>x.id==id);
+    return s + (p ? p.price*cart[id] : 0);
+  }, 0);
+}
+
+// ── Payment / change ──
+function updateChange() {
+  const row = document.getElementById('change-row');
+  const val = document.getElementById('change-val');
+  const payEl = document.getElementById('pay-input');
+  const pay = parseInt(payEl.value, 10);
+  const total = currentTotal();
+  if (!payEl.value || !Number.isFinite(pay)) { row.style.display = 'none'; return; }
+  const change = pay - total;
+  row.style.display = 'flex';
+  if (change >= 0) {
+    row.className = 'change-row ok';
+    val.textContent = '¥' + change.toLocaleString();
+  } else {
+    row.className = 'change-row short';
+    val.textContent = '不足 ¥' + Math.abs(change).toLocaleString();
+  }
+}
+function setPayAmount(n) {
+  document.getElementById('pay-input').value = n;
+  updateChange();
+}
+function setPayExact() {
+  document.getElementById('pay-input').value = currentTotal();
+  updateChange();
+}
+function resetPay() {
+  document.getElementById('pay-input').value = '';
+  document.getElementById('change-row').style.display = 'none';
+}
+
+function clearCart() { cart={}; renderCart(); resetPay(); }
+
+function checkout() {
+  const ids = Object.keys(cart);
+  if (!ids.length) return;
+  const payEl = document.getElementById('pay-input');
+  const payVal = payEl.value;
+  if (payVal !== '') {
+    const pay = parseInt(payVal, 10);
+    if (!Number.isFinite(pay) || pay < currentTotal()) {
+      alert('預かり金が合計金額に足りません。');
+      return;
+    }
+  }
+  let sub=0, itemsArr=[];
+  ids.forEach(id => {
+    const p=PRODUCTS.find(x=>x.id==id), q=cart[id];
+    sub+=p.price*q;
+    itemsArr.push({name:p.name, qty:q, price:p.price});
+    productTotals[id].qty+=q;
+    productTotals[id].amount+=p.price*q;
+  });
+  const tax=0, total=sub;
+  const received = payVal !== '' ? parseInt(payVal, 10) : total;
+  const change = received - total;
+  const t=new Date();
+  const date=t.getFullYear()+'/'+(t.getMonth()+1).toString().padStart(2,'0')+'/'+t.getDate().toString().padStart(2,'0');
+  const time=t.getHours().toString().padStart(2,'0')+':'+t.getMinutes().toString().padStart(2,'0');
+  salesLog.unshift({ id: Date.now(), date, time, items: itemsArr, sub, tax, total, received, change, sent: false });
+  saveData();
+  refreshHeaderStat();
+  clearCart();
+  const toast=document.getElementById('toast');
+  toast.classList.add('show');
+  setTimeout(()=>toast.classList.remove('show'), 2000);
+}
+
+// ── History / Edit ──
+let editDraft = null; // { id, items: [{name,price,qty}], received }
+
+function startEdit(id) {
+  const l = salesLog.find(x => x.id === id);
+  if (!l) return;
+  editDraft = {
+    id,
+    items: l.items.map(i => ({ name: i.name, price: i.price, qty: i.qty })),
+    received: (typeof l.received === 'number') ? l.received : l.total
+  };
+  renderHistory();
+}
+function cancelEdit() {
+  editDraft = null;
+  renderHistory();
+}
+function editDraftTotal() {
+  return editDraft.items.reduce((s, i) => s + i.price * i.qty, 0);
+}
+function editQtyChange(idx, d) {
+  if (!editDraft) return;
+  editDraft.items[idx].qty += d;
+  if (editDraft.items[idx].qty <= 0) editDraft.items.splice(idx, 1);
+  renderHistory();
+}
+function editReceivedChange(value) {
+  if (!editDraft) return;
+  const v = parseInt(value, 10);
+  editDraft.received = Number.isFinite(v) ? v : 0;
+  renderHistory();
+}
+function addEditItem(productId) {
+  if (!editDraft || !productId) return;
+  const p = PRODUCTS.find(x => x.id == productId);
+  if (!p) return;
+  const existing = editDraft.items.find(i => i.name === p.name);
+  if (existing) existing.qty += 1;
+  else editDraft.items.push({ name: p.name, price: p.price, qty: 1 });
+  renderHistory();
+}
+function saveEdit() {
+  if (!editDraft) return;
+  if (!editDraft.items.length) { alert('商品が1つもありません。取り消す場合は「取消」を使ってください。'); return; }
+  const idx = salesLog.findIndex(x => x.id === editDraft.id);
+  if (idx === -1) { editDraft = null; renderHistory(); return; }
+  const l = salesLog[idx];
+  // 旧データを集計から差し引く
+  l.items.forEach(item => {
+    const p = PRODUCTS.find(p => p.name === item.name);
+    if (p && productTotals[p.id]) {
+      productTotals[p.id].qty -= item.qty;
+      productTotals[p.id].amount -= item.qty * item.price;
+    }
+  });
+  // 新データを集計に反映
+  const newTotal = editDraftTotal();
+  editDraft.items.forEach(item => {
+    const p = PRODUCTS.find(p => p.name === item.name);
+    if (p) {
+      if (!productTotals[p.id]) productTotals[p.id] = { qty: 0, amount: 0 };
+      productTotals[p.id].qty += item.qty;
+      productTotals[p.id].amount += item.qty * item.price;
+    }
+  });
+  l.items = editDraft.items.map(i => ({ ...i }));
+  l.sub = newTotal;
+  l.total = newTotal;
+  l.received = editDraft.received;
+  l.change = editDraft.received - newTotal;
+  l.sent = false; // 内容を変更したので未送信に戻す
+  editDraft = null;
+  saveData();
+  refreshHeaderStat();
+  renderHistory();
+  updateSyncStatus();
+  renderSummary();
+}
+
+function renderHistory() {
+  const total = salesLog.reduce((s,l)=>s+l.total,0);
+  document.getElementById('h-count').textContent = salesLog.length+' 件';
+  document.getElementById('h-total').textContent = '¥'+total.toLocaleString();
+  const wrap = document.getElementById('log-wrap');
+  if (!salesLog.length) { wrap.innerHTML='<div class="empty-state">まだ取引がありません</div>'; return; }
+  wrap.innerHTML = `<div class="log-card">
+    ${salesLog.map(l=>{
+      if (editDraft && editDraft.id === l.id) {
+        const total = editDraftTotal();
+        const change = editDraft.received - total;
+        const availableToAdd = PRODUCTS.filter(p => !editDraft.items.find(i=>i.name===p.name));
+        return `<div class="log-row" style="flex-direction:column;align-items:stretch;gap:8px;">
+          <div style="font-size:12px;color:var(--text-muted);">${l.date} ${l.time} を編集中</div>
+          ${editDraft.items.map((item,idx)=>`<div class="cart-item">
+            <span class="ci-name">${item.name}</span>
+            <div class="qty-ctrl">
+              <button class="qty-btn" onclick="editQtyChange(${idx},-1)">−</button>
+              <span class="qty-num">${item.qty}</span>
+              <button class="qty-btn" onclick="editQtyChange(${idx},1)">＋</button>
+            </div>
+            <span class="ci-price">¥${(item.price*item.qty).toLocaleString()}</span>
+          </div>`).join('')}
+          ${availableToAdd.length ? `<select onchange="addEditItem(this.value); this.value='';" style="padding:8px;border:1px solid var(--border-strong);border-radius:8px;font-size:13px;background:var(--surface);color:var(--text);">
+            <option value="">＋ 商品を追加</option>
+            ${availableToAdd.map(p=>`<option value="${p.id}">${p.name}（¥${p.price.toLocaleString()}）</option>`).join('')}
+          </select>` : ''}
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:12px;color:var(--text-muted);min-width:48px;">預り金</span>
+            <input type="number" inputmode="numeric" value="${editDraft.received}" oninput="editReceivedChange(this.value)" style="flex:1;padding:8px;border:1px solid var(--border-strong);border-radius:8px;font-size:14px;text-align:right;background:var(--surface);color:var(--text);">
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:600;">
+            <span>合計 ¥${total.toLocaleString()}</span>
+            <span style="color:${change<0?'var(--danger)':'var(--success)'};">おつり ${change<0?'不足 ':''}¥${Math.abs(change).toLocaleString()}</span>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button onclick="cancelEdit()" style="flex:1;padding:9px;border:1px solid var(--border-strong);border-radius:8px;background:var(--surface2);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;">キャンセル</button>
+            <button onclick="saveEdit()" style="flex:2;padding:9px;border:none;border-radius:8px;background:var(--accent);color:#fff;font-size:13px;font-weight:700;cursor:pointer;">保存</button>
+          </div>
+        </div>`;
+      }
+      const hasReceived = typeof l.received === 'number';
+      const payInfo = hasReceived
+        ? `<span style="font-size:11px;color:var(--text-muted);display:block;margin-top:2px;">預り ¥${l.received.toLocaleString()}　おつり ¥${l.change.toLocaleString()}</span>`
+        : '';
+      return `<div class="log-row" style="align-items:flex-start;">
+      <span class="log-time">${l.date} ${l.time}</span>
+      <span class="log-items">${l.items.map(i=>i.name+'×'+i.qty).join('、')}${payInfo}</span>
+      <span class="log-total">¥${l.total.toLocaleString()}
+        <span class="log-badge ${l.sent?'badge-sent':'badge-pending'}">${l.sent?'送信済':'未送信'}</span>
+      </span>
+      <button onclick="startEdit(${l.id})" style="margin-left:8px;padding:4px 10px;border:1px solid var(--border-strong);border-radius:6px;background:transparent;color:var(--text-muted);font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;">編集</button>
+      <button onclick="cancelTransaction(${l.id})" style="margin-left:6px;padding:4px 10px;border:1px solid var(--danger);border-radius:6px;background:transparent;color:var(--danger);font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;">取消</button>
+    </div>`;
+    }).join('')}
+  </div>`;
+}
+
+function cancelTransaction(id) {
+  const idx = salesLog.findIndex(l => l.id === id);
+  if (idx === -1) return;
+  const l = salesLog[idx];
+  const label = `${l.date} ${l.time} ¥${l.total.toLocaleString()}`;
+  if (!confirm(`この取引を取り消しますか？\n${label}\n${l.items.map(i=>i.name+'×'+i.qty).join('、')}`)) return;
+  if (editDraft && editDraft.id === id) editDraft = null;
+  // 集計から差し引く
+  l.items.forEach(item => {
+    const p = PRODUCTS.find(p => p.name === item.name);
+    if (p && productTotals[p.id]) {
+      productTotals[p.id].qty -= item.qty;
+      productTotals[p.id].amount -= item.qty * item.price;
+    }
+  });
+  salesLog.splice(idx, 1);
+  saveData();
+  refreshHeaderStat();
+  renderHistory();
+  updateSyncStatus();
+}
+
+// ── Sync ──
+function updateSyncStatus() {
+  const pending = salesLog.filter(l=>!l.sent).length;
+  const el = document.getElementById('sync-status');
+  const btn = document.getElementById('btn-sync');
+  if (pending === 0) {
+    el.textContent = '✓ すべて送信済み';
+    el.className = 'sync-status ok';
+    btn.disabled = true;
+  } else {
+    el.textContent = `未送信 ${pending} 件`;
+    el.className = 'sync-status pending';
+    btn.disabled = false;
+  }
+}
+
+async function syncToSheet() {
+  const url = getGasUrl();
+  if (!url) { alert('先に「集計」タブでスプレッドシート連携URLを設定してください。'); return; }
+  const pending = salesLog.filter(l=>!l.sent);
+  if (!pending.length) return;
+  const btn = document.getElementById('btn-sync');
+  const el = document.getElementById('sync-status');
+  btn.disabled = true;
+  el.textContent = '送信中...';
+  el.className = 'sync-status';
+  try {
+    const rows = pending.map(l => {
+      const row = { id: l.id, date: l.date, time: l.time };
+      PRODUCTS.forEach(p => {
+        const found = l.items.find(i => i.name === p.name);
+        row[p.name + '_qty'] = found ? found.qty : 0;
+        row[p.name + '_amount'] = found ? found.qty * found.price : 0;
+      });
+      row.total = l.total;
+      row.received = typeof l.received === 'number' ? l.received : l.total;
+      row.change = typeof l.change === 'number' ? l.change : 0;
+      return row;
+    });
+    const productNames = PRODUCTS.map(p => p.name);
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {'Content-Type':'text/plain'},
+      body: JSON.stringify({ rows, productNames })
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    pending.forEach(l => { l.sent = true; });
+    saveData();
+    renderHistory();
+    el.textContent = '✓ 送信完了！';
+    el.className = 'sync-status ok';
+    btn.disabled = true;
+  } catch(e) {
+    el.textContent = '送信失敗。Wi-Fi接続を確認してください。';
+    el.className = 'sync-status error';
+    btn.disabled = false;
+  }
+}
+
+// ── Summary ──
+function renderSummary() {
+  const total = salesLog.reduce((s,l)=>s+l.total,0);
+  document.getElementById('s-total').textContent = '¥'+total.toLocaleString();
+  document.getElementById('s-count').textContent = salesLog.length+' 件';
+  const sorted = PRODUCTS.map(p=>({...p,...productTotals[p.id]})).filter(p=>p.qty>0).sort((a,b)=>b.amount-a.amount);
+  const barSec = document.getElementById('bar-section');
+  if (!sorted.length) { barSec.innerHTML='<div class="empty-state">まだデータがありません</div>'; }
+  else {
+    const max = sorted[0].amount;
+    barSec.innerHTML = sorted.map(p=>`<div class="bar-row">
+      <span class="bar-name">${p.name}</span>
+      <div class="bar-track"><div class="bar-fill" style="width:${Math.round(p.amount/max*100)}%"></div></div>
+      <span class="bar-amount">¥${p.amount.toLocaleString()}</span>
+    </div>`).join('');
+  }
+  const all = PRODUCTS.map(p=>({...p,...productTotals[p.id]})).sort((a,b)=>b.amount-a.amount);
+  const totalQty = all.reduce((s,p)=>s+p.qty,0);
+  document.getElementById('sum-tbody').innerHTML = all.map(p=>`<tr>
+    <td>${p.name}</td><td>${p.qty}</td><td>¥${p.amount.toLocaleString()}</td>
+  </tr>`).join('');
+  document.getElementById('sum-tfoot').innerHTML = `<tr>
+    <td>合計</td><td>${totalQty}</td><td>¥${total.toLocaleString()}</td>
+  </tr>`;
+}
+
+function confirmReset() {
+  if (confirm('本日の売上データをすべてリセットしますか？')) {
+    salesLog=[]; PRODUCTS.forEach(p=>{productTotals[p.id]={qty:0,amount:0};});
+    saveData(); refreshHeaderStat(); renderSummary(); renderHistory();
+    document.getElementById('header-stat').textContent='本日 ¥0';
+  }
+}
+
+
+
+renderProducts();
+
+
+</script>
+
+<script>
+// Service Worker（sw.js）を登録：初回オンライン時にアプリ本体を端末へ保存し、以降はオフラインでも起動できる
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+    // データをChromeに消されにくくする（許可されるかは端末側の判断）
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+  });
+}
+</script>
+
+</body>
+</html>

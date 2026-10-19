@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="レジ">
+<meta name="theme-color" content="#2D3748">
+<link rel="manifest" href="manifest-portal.json">
+<link rel="icon" href="icon-portal-192.png">
+<title>レジ ポータル</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root { --bg:#F7F6F3; --text:#1A1916; --muted:#7A7870; --border:#E2DFD8; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif;
+    display: flex; flex-direction: column; min-height: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+  header { padding: 20px 24px 8px; }
+  h1 { font-size: 22px; font-weight: 600; }
+  .sub { font-size: 14px; color: var(--muted); margin-top: 4px; }
+  main { flex: 1; padding: 16px 24px; display: flex; align-items: center; justify-content: center; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; width: 100%; max-width: 760px; }
+  .tile {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+    min-height: 200px; border-radius: 20px; text-decoration: none; color: #fff;
+    box-shadow: 0 2px 8px rgba(0,0,0,.15);
+  }
+  .tile:active { transform: scale(.98); filter: brightness(.95); }
+  .tile .mark { font-size: 64px; font-weight: 700; line-height: 1; }
+  .tile .name { font-size: 22px; font-weight: 600; }
+  footer { padding: 12px 24px 20px; font-size: 13px; color: var(--muted); text-align: center; }
+  #offline-status.ok { color: #276749; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>レジ</h1>
+    <div class="sub">店舗を選んでください</div>
+  </header>
+  <main><div class="grid" id="grid"></div></main>
+  <footer>
+    <div id="offline-status">オフライン準備を確認中…</div>
+  </footer>
+
+<script>
+// 店舗を増やすときは、ここに1行足すだけ（id はデータの保存先の区別に使われる。あとから変えると別データ扱いになるので注意）
+const STORES = [
+  { id: 'a', label: '店舗A', mark: 'A', color: '#C05621' },
+  { id: 'b', label: '店舗B', mark: 'B', color: '#2F855A' },
+];
+
+const grid = document.getElementById('grid');
+STORES.forEach(s => {
+  const a = document.createElement('a');
+  a.className = 'tile';
+  a.style.background = s.color;
+  a.href = 'index.html?store=' + encodeURIComponent(s.id) + '&label=' + encodeURIComponent(s.label);
+  a.innerHTML = '<div class="mark"></div><div class="name"></div>';
+  a.querySelector('.mark').textContent = s.mark;
+  a.querySelector('.name').textContent = s.label;
+  grid.appendChild(a);
+});
+
+// Service Worker 登録（初回オンライン時に全ファイルを端末へ保存する）
+const st = document.getElementById('offline-status');
+const canSW = 'serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost');
+if (canSW) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+    // データをChromeに消されにくくする（許可されるかは端末側の判断）
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+  });
+}
+
+// オフラインで使える状態か表示
+async function checkOffline() {
+  if (!canSW || !window.caches) { st.textContent = 'オフライン非対応の環境です（HTTPSで開いてください）'; return; }
+  try {
+    const needed = ['index.html', 'portal.html'].map(p => new URL(p, location.href).href);
+    const hits = await Promise.all(needed.map(u => caches.match(u, { ignoreSearch: true })));
+    if (hits.every(Boolean)) { st.textContent = '✓ オフラインで使えます'; st.className = 'ok'; }
+    else { st.textContent = 'オフライン準備中…（オンラインのまま少しお待ちください）'; setTimeout(checkOffline, 2000); }
+  } catch (e) { st.textContent = ''; }
+}
+checkOffline();
+</script>
+</body>
+</html>
