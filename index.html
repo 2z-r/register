@@ -917,6 +917,14 @@ async function syncToSheet() {
       body: JSON.stringify({ rows, productNames, renames: sentRenames, deletes: sentDeletes })
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
+        // スプレッドシート側（GAS）の返事を確認する。status が 'ok' でなければ失敗として扱う
+    let result = null;
+    try { result = await res.json(); } catch (_) {}
+    if (!result || result.status !== 'ok') {
+      const err = new Error((result && result.message) || '応答が不正です。URLとデプロイの設定を確認してください');
+      err.fromGas = true;
+      throw err;
+    }
     pending.forEach(l => { l.sent = true; });
     // 送信した分の名前変更だけを消す（送信中に新しく変更した分は残す）
     savePendingRenames(loadPendingRenames().filter(r => !sentRenames.some(x => x.from === r.from && x.to === r.to)));
@@ -927,7 +935,10 @@ async function syncToSheet() {
     el.className = 'sync-status ok';
     btn.disabled = true;
   } catch(e) {
-    el.textContent = '送信失敗。Wi-Fi接続を確認してください。';
+    console.error(e);
+    el.textContent = (e && e.fromGas)
+      ? '送信失敗：スプレッドシート側のエラー（' + e.message + '）'
+      : '送信失敗。Wi-Fi接続を確認してください。';
     el.className = 'sync-status error';
     btn.disabled = false;
   }
