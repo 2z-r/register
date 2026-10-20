@@ -374,6 +374,7 @@ const STORE_LABEL = (urlParams.get('label') || '').trim();
 const LS_KEY = 'register_sales_v1_' + STORE_ID;
 const GAS_KEY = 'register_gas_url_' + STORE_ID;
 const PROD_KEY = 'register_products_v1_' + STORE_ID;
+const DELETE_KEY = 'register_deletes_v1_' + STORE_ID;   // スプレッドシートから消す取引ID（未送信）
 const RENAME_KEY = 'register_renames_v1_' + STORE_ID;   // スプレッドシートへ未送信の「商品名の変更」
 
 let PRODUCTS = [];
@@ -394,6 +395,21 @@ function loadProducts() {
 }
 function saveProducts() {
   localStorage.setItem(PROD_KEY, JSON.stringify(PRODUCTS));
+}
+// ── 取消した取引のID（スプレッドシートの行も消すため、次回送信まで保持）──
+function loadPendingDeletes() {
+  try {
+    const list = JSON.parse(localStorage.getItem(DELETE_KEY) || '[]');
+    return Array.isArray(list) ? list : [];
+  } catch(e) { return []; }
+}
+function savePendingDeletes(list) {
+  localStorage.setItem(DELETE_KEY, JSON.stringify(list));
+}
+function recordDelete(id) {
+  const list = loadPendingDeletes();
+  if (!list.includes(id)) list.push(id);
+  savePendingDeletes(list);
 }
 // ── 商品名の変更履歴（スプレッドシートの列名にも反映するため、次回送信まで保持）──
 function loadPendingRenames() {
@@ -830,6 +846,7 @@ function cancelTransaction(id) {
     }
   });
   salesLog.splice(idx, 1);
+  recordDelete(id);   // シートに行があれば、次回送信時に消す
   saveData();
   refreshHeaderStat();
   renderHistory();
@@ -839,14 +856,15 @@ function cancelTransaction(id) {
 // ── Sync ──
 function updateSyncStatus() {
   const pending = salesLog.filter(l=>!l.sent).length;
+  const dels = loadPendingDeletes().length;
   const el = document.getElementById('sync-status');
   const btn = document.getElementById('btn-sync');
-  if (pending === 0) {
+  if (pending === 0 && dels === 0) {
     el.textContent = '✓ すべて送信済み';
     el.className = 'sync-status ok';
     btn.disabled = true;
   } else {
-    el.textContent = `未送信 ${pending} 件`;
+    el.textContent = `未送信 ${pending} 件` + (dels ? `・取消の反映 ${dels} 件` : '');
     el.className = 'sync-status pending';
     btn.disabled = false;
   }
@@ -856,7 +874,8 @@ async function syncToSheet() {
   const url = getGasUrl();
   if (!url) { alert('先に「集計」タブでスプレッドシート連携URLを設定してください。'); return; }
   const pending = salesLog.filter(l=>!l.sent);
-  if (!pending.length) return;
+  const sentDeletes = loadPendingDeletes();   // 取消した取引（シートの行も消す）
+  if (!pending.length && !sentDeletes.length) return;
   const btn = document.getElementById('btn-sync');
   const el = document.getElementById('sync-status');
   btn.disabled = true;
@@ -880,12 +899,13 @@ async function syncToSheet() {
     const res = await fetch(url, {
       method: 'POST',
       headers: {'Content-Type':'text/plain'},
-      body: JSON.stringify({ rows, productNames, renames: sentRenames })
+      body: JSON.stringify({ rows, productNames, renames: sentRenames, deletes: sentDeletes })
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     pending.forEach(l => { l.sent = true; });
     // 送信した分の名前変更だけを消す（送信中に新しく変更した分は残す）
     savePendingRenames(loadPendingRenames().filter(r => !sentRenames.some(x => x.from === r.from && x.to === r.to)));
+    savePendingDeletes(loadPendingDeletes().filter(id => !sentDeletes.includes(id)));
     saveData();
     renderHistory();
     el.textContent = '✓ 送信完了！';
