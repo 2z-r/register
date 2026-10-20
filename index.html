@@ -374,6 +374,7 @@ const STORE_LABEL = (urlParams.get('label') || '').trim();
 const LS_KEY = 'register_sales_v1_' + STORE_ID;
 const GAS_KEY = 'register_gas_url_' + STORE_ID;
 const PROD_KEY = 'register_products_v1_' + STORE_ID;
+const RENAME_KEY = 'register_renames_v1_' + STORE_ID;   // スプレッドシートへ未送信の「商品名の変更」
 
 let PRODUCTS = [];
 let cart = {};
@@ -393,6 +394,23 @@ function loadProducts() {
 }
 function saveProducts() {
   localStorage.setItem(PROD_KEY, JSON.stringify(PRODUCTS));
+}
+// ── 商品名の変更履歴（スプレッドシートの列名にも反映するため、次回送信まで保持）──
+function loadPendingRenames() {
+  try {
+    const list = JSON.parse(localStorage.getItem(RENAME_KEY) || '[]');
+    return Array.isArray(list) ? list : [];
+  } catch(e) { return []; }
+}
+function savePendingRenames(list) {
+  localStorage.setItem(RENAME_KEY, JSON.stringify(list));
+}
+function recordRename(from, to) {
+  let list = loadPendingRenames();
+  const chained = list.find(r => r.to === from);   // A→B のあと B→C なら A→C にまとめる
+  if (chained) chained.to = to; else list.push({ from: from, to: to });
+  list = list.filter(r => r.from !== r.to);         // A→B→A なら記録なし
+  savePendingRenames(list);
 }
 function nextProductId() {
   return PRODUCTS.reduce((m,p)=>Math.max(m,p.id), 0) + 1;
@@ -424,7 +442,19 @@ function updateProductField(id, field, value) {
   if (field === 'name') {
     const v = value.trim();
     if (!v) return;
+    if (v === p.name) return;
+    if (PRODUCTS.some(x => x.id !== id && x.name === v)) {
+      alert('同じ名前の商品が既にあります。別の名前にしてください。');
+      renderProductManager();
+      return;
+    }
+    const oldName = p.name;
     p.name = v;
+    // 過去の取引（履歴・編集中の内容）の商品名も新しい名前に揃える
+    salesLog.forEach(l => l.items.forEach(i => { if (i.name === oldName) i.name = v; }));
+    if (editDraft) editDraft.items.forEach(i => { if (i.name === oldName) i.name = v; });
+    recordRename(oldName, v);
+    saveData();
   } else if (field === 'price') {
     const v = parseInt(value, 10);
     if (!Number.isFinite(v)) return;
@@ -846,13 +876,16 @@ async function syncToSheet() {
       return row;
     });
     const productNames = PRODUCTS.map(p => p.name);
+    const sentRenames = loadPendingRenames();   // 商品名の変更（シートの列名にも反映する）
     const res = await fetch(url, {
       method: 'POST',
       headers: {'Content-Type':'text/plain'},
-      body: JSON.stringify({ rows, productNames })
+      body: JSON.stringify({ rows, productNames, renames: sentRenames })
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     pending.forEach(l => { l.sent = true; });
+    // 送信した分の名前変更だけを消す（送信中に新しく変更した分は残す）
+    savePendingRenames(loadPendingRenames().filter(r => !sentRenames.some(x => x.from === r.from && x.to === r.to)));
     saveData();
     renderHistory();
     el.textContent = '✓ 送信完了！';
