@@ -381,6 +381,22 @@ const RENAME_KEY = 'register_renames_v1_' + STORE_ID;   // スプレッドシー
 
 let PRODUCTS = [];
 let cart = {};
+const CART_KEY = 'register_cart_v1_' + STORE_ID;   // 会計の途中（カートと預り金）の保存先
+function saveCartState() {
+  try {
+    localStorage.setItem(CART_KEY, JSON.stringify({ cart: cart, pay: document.getElementById('pay-input').value }));
+  } catch (e) {}
+}
+function loadCartState() {
+  try {
+    const r = JSON.parse(localStorage.getItem(CART_KEY) || 'null');
+    if (!r) return;
+    if (r.cart) Object.keys(r.cart).forEach(id => {
+      if (PRODUCTS.some(p => p.id == id) && r.cart[id] > 0) cart[id] = r.cart[id];   // 削除済みの商品は無視
+    });
+    if (r.pay) document.getElementById('pay-input').value = r.pay;
+  } catch (e) {}
+}
 let salesLog = [];   // { id, date, time, items, sub, tax, total, sent }
 let productTotals = {};
 
@@ -558,6 +574,8 @@ loadProducts();
 loadData();
 const savedUrl = getGasUrl();
 if (savedUrl) document.getElementById('gas-url-input').value = savedUrl;
+loadCartState();
+renderCart();
 updateUrlWarning();
 refreshHeaderStat();
 
@@ -640,6 +658,7 @@ function currentTotal() {
 
 // ── Payment / change ──
 function updateChange() {
+  saveCartState();
   const row = document.getElementById('change-row');
   const val = document.getElementById('change-val');
   const payEl = document.getElementById('pay-input');
@@ -669,7 +688,7 @@ function resetPay() {
   document.getElementById('change-row').style.display = 'none';
 }
 
-function clearCart() { cart={}; renderCart(); resetPay(); }
+function clearCart() { cart={}; renderCart(); resetPay(); saveCartState(); }
 
 function checkout() {
   const ids = Object.keys(cart);
