@@ -334,7 +334,10 @@
           <tfoot id="sum-tfoot"></tfoot>
         </table>
       </div>
-      <button class="reset-btn" onclick="confirmReset()">1日の集計をリセット</button>
+      <button class="reset-btn" style="border-color:var(--border-strong);color:var(--text);" onclick="exportBackup()">履歴をバックアップ（書き出し）</button>
+<button class="reset-btn" style="border-color:var(--border-strong);color:var(--text);" onclick="document.getElementById('backup-file').click()">バックアップから復元（読み込み）</button>
+<input type="file" id="backup-file" accept=".json,application/json" style="display:none" onchange="importBackup(this)">
+<button class="reset-btn" onclick="confirmReset()">1日の集計をリセット</button>
     </div>
   </div>
 
@@ -989,7 +992,49 @@ function renderSummary() {
   </tr>`;
 }
 
-function confirmReset() {
+function exportBackup() {
+  const t = new Date();
+  const stamp = t.getFullYear() + String(t.getMonth()+1).padStart(2,'0') + String(t.getDate()).padStart(2,'0') + '-' + String(t.getHours()).padStart(2,'0') + String(t.getMinutes()).padStart(2,'0');
+  const data = { app: 'register-backup', version: 1, store: STORE_ID, exportedAt: t.toISOString(), products: PRODUCTS, salesLog: salesLog, productTotals: productTotals };
+  const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'register-backup-' + STORE_ID + '-' + stamp + '.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  alert('バックアップを書き出しました（取引 ' + salesLog.length + ' 件）。\nダウンロードフォルダに保存されます。');
+}
+
+function importBackup(input) {
+  const file = input.files && input.files[0];
+  input.value = '';
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const d = JSON.parse(reader.result);
+      if (!d || d.app !== 'register-backup' || !Array.isArray(d.salesLog) || !Array.isArray(d.products) || !d.productTotals) throw new Error('format');
+      if (d.store !== STORE_ID && !confirm('このバックアップは、別の店舗（' + d.store + '）のものです。\nこの店舗に読み込みますか？')) return;
+      if (!confirm('バックアップ（取引 ' + d.salesLog.length + ' 件）を読み込みます。\n今ある履歴と商品は、すべて置き換わります。よろしいですか？')) return;
+      PRODUCTS = d.products;
+      salesLog = d.salesLog;
+      productTotals = d.productTotals;
+      PRODUCTS.forEach(p => { if (!productTotals[p.id]) productTotals[p.id] = {qty:0, amount:0}; });
+      saveProducts();
+      saveData();
+      cart = {};
+      renderProducts(); renderCart(); resetPay(); saveCartState();
+      refreshHeaderStat(); renderSummary(); renderHistory(); renderProductManager(); updateSyncStatus();
+      alert('復元しました。');
+    } catch (e) {
+      alert('読み込めませんでした。このアプリのバックアップファイルではない可能性があります。');
+    }
+  };
+  reader.readAsText(file);
+}
+  function confirmReset() {
     const pending = salesLog.filter(l => !l.sent).length;
   if (pending > 0 && !confirm(`未送信の取引が ${pending} 件あります。\nリセットすると、この分はスプレッドシートに送れなくなります。\n\n先に「送信」することをおすすめします。それでも続けますか？`)) return;
   const typed = prompt('本日の売上データをすべてリセットします。元に戻せません。\n続けるには「リセット」と入力してください。');
