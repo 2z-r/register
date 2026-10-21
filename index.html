@@ -971,7 +971,11 @@ function renderSummary() {
 }
 
 function confirmReset() {
-  if (confirm('本日の売上データをすべてリセットしますか？')) {
+    const pending = salesLog.filter(l => !l.sent).length;
+  if (pending > 0 && !confirm(`未送信の取引が ${pending} 件あります。\nリセットすると、この分はスプレッドシートに送れなくなります。\n\n先に「送信」することをおすすめします。それでも続けますか？`)) return;
+  const typed = prompt('本日の売上データをすべてリセットします。元に戻せません。\n続けるには「リセット」と入力してください。');
+  if (typed !== null && typed.trim() !== 'リセット') alert('入力が違うため、リセットしませんでした。');
+  if (typed !== null && typed.trim() === 'リセット') {
     salesLog=[]; PRODUCTS.forEach(p=>{productTotals[p.id]={qty:0,amount:0};});
     saveData(); refreshHeaderStat(); renderSummary(); renderHistory();
     document.getElementById('header-stat').textContent='本日 ¥0';
