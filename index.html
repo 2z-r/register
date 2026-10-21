@@ -149,6 +149,16 @@
   .change-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 10px; border-radius: var(--radius); margin-bottom: 10px; font-size: 14px; font-weight: 600; }
   .change-row.ok { background: var(--success-bg); color: var(--success); }
   .change-row.short { background: var(--danger-bg); color: var(--danger); }
+  .pay-row, .pay-quick, .pay-hint, .pay-more, .pay-pad { display: none !important; }
+　.tap-pay { margin-bottom: 10px; }
+　.tap-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; margin-bottom: 8px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface); }
+　.tap-label { font-size: 13px; font-weight: 600; color: var(--text-muted); }
+　.tap-val { font-size: 28px; font-weight: 700; color: var(--text); }
+　.tap-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+　.tap-grid button { padding: 16px 0; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface2); color: var(--text); font-size: 15px; font-weight: 700; cursor: pointer; }
+　.tap-grid button:active { background: var(--border); }
+　.tap-grid button.tap-exact { background: var(--accent); border-color: var(--accent); color: #fff; }
+　.tap-grid button.tap-sub { grid-column: span 2; font-size: 14px; font-weight: 600; padding: 12px 0; }
   .change-row .cr-val { font-size: 17px; }
 
   /* ── Product manager ── */
@@ -282,6 +292,25 @@
             <button onclick="setPayAmount(5000)">¥5000</button>
             <button onclick="setPayAmount(10000)">¥10000</button>
           </div>
+          
+            <div class="tap-pay">
+  <div class="tap-head">
+    <span class="tap-label">預かり</span>
+    <span class="tap-val" id="tap-val">¥0</span>
+  </div>
+  <div class="tap-grid">
+    <button class="tap-exact" onclick="payExact()">ちょうど</button>
+    <button onclick="payAdd(10000)">¥10,000</button>
+    <button onclick="payAdd(5000)">¥5,000</button>
+    <button onclick="payAdd(1000)">¥1,000</button>
+    <button onclick="payAdd(500)">¥500</button>
+    <button onclick="payAdd(100)">¥100</button>
+    <button onclick="payAdd(50)">¥50</button>
+    <button onclick="payAdd(10)">¥10</button>
+    <button class="tap-sub" onclick="payUndo()">1つ戻す</button>
+    <button class="tap-sub" onclick="payClear()">クリア</button>
+  </div>
+</div>
           <div class="change-row ok" id="change-row" style="display:none;">
             <span>おつり</span>
             <span class="cr-val" id="change-val">¥0</span>
@@ -384,6 +413,7 @@ const RENAME_KEY = 'register_renames_v1_' + STORE_ID;   // スプレッドシー
 
 let PRODUCTS = [];
 let cart = {};
+let payStack = [];   // 預かりで押した金額の履歴（「1つ戻す」用）
 const CART_KEY = 'register_cart_v1_' + STORE_ID;   // 会計の途中（カートと預り金）の保存先
 function saveCartState() {
   try {
@@ -397,7 +427,7 @@ function loadCartState() {
     if (r.cart) Object.keys(r.cart).forEach(id => {
       if (PRODUCTS.some(p => p.id == id) && r.cart[id] > 0) cart[id] = r.cart[id];   // 削除済みの商品は無視
     });
-    if (r.pay) document.getElementById('pay-input').value = r.pay;
+    if (r.pay) { payStack = [parseInt(r.pay, 10)]; payRender(); }
   } catch (e) {}
 }
 let salesLog = [];   // { id, date, time, items, sub, tax, total, sent }
@@ -678,6 +708,21 @@ function updateChange() {
     val.textContent = '不足 ¥' + Math.abs(change).toLocaleString();
   }
 }
+function payRender() {
+  const sum = payStack.reduce((s, n) => s + n, 0);
+  document.getElementById('pay-input').value = payStack.length ? sum : '';
+  document.getElementById('tap-val').textContent = yen(sum);
+  updateChange();
+}
+function payAdd(n) {
+  const sum = payStack.reduce((s, x) => s + x, 0);
+  if (sum + n > 9999999) return;
+  payStack.push(n);
+  payRender();
+}
+function payExact() { payStack = [currentTotal()]; payRender(); }
+function payUndo() { payStack.pop(); payRender(); }
+function payClear() { payStack = []; payRender(); }
 function setPayAmount(n) {
   document.getElementById('pay-input').value = n;
   updateChange();
@@ -687,7 +732,9 @@ function setPayExact() {
   updateChange();
 }
 function resetPay() {
+  payStack = [];
   document.getElementById('pay-input').value = '';
+  document.getElementById('tap-val').textContent = yen(0);
   document.getElementById('change-row').style.display = 'none';
 }
 
