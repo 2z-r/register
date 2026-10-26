@@ -76,7 +76,8 @@
     <details class="xfer">
       <summary>設定の引き継ぎ（準備用）</summary>
       <h2>書き出す</h2>
-      <p>この端末の、店舗ごとの商品構成・スプレッドシート連携URL・PINを、1つの文字列にまとめます。履歴・売上は含みません。PINを設定した店舗は、書き出し・読み込みのときにそのPINを入力します。<span class="warn">連携URLが入るため、人目に付く場所には貼らないでください。</span></p>
+      <p>選んだ店舗の商品構成・スプレッドシート連携URL・PINを、1つの文字列にまとめます（店舗AとBは別々に書き出します）。履歴・売上は含みません。PINを設定した店舗は、書き出し・読み込みのときにそのPINを入力します。<span class="warn">連携URLが入るため、人目に付く場所には貼らないでください。</span></p>
+      <select id="xfer-store"></select>
       <button type="button" id="xfer-export">書き出す</button>
       <textarea id="xfer-out" readonly placeholder="ここに表示されます"></textarea>
       <button type="button" id="xfer-copy">コピー</button>
@@ -232,7 +233,10 @@ function hasHistory(id) {
   try { const d = JSON.parse(localStorage.getItem(LOG_P + id) || 'null'); return !!(d && d.salesLog && d.salesLog.length); }
   catch (e) { return false; }
 }
-document.getElementById('xfer-export').addEventListener('click', async () => {
+const xferSel = document.getElementById('xfer-store');
+STORES.forEach(t => { const o = document.createElement('option'); o.value = t.id; o.textContent = t.label; xferSel.appendChild(o); });
+xferSel.addEventListener('change', () => { document.getElementById('xfer-out').value = ''; say(''); });
+ document.getElementById('xfer-export').addEventListener('click', async () => {
   const stores = {};
   try {
     for (let i = 0; i < localStorage.length; i++) {
@@ -248,6 +252,8 @@ document.getElementById('xfer-export').addEventListener('click', async () => {
       else stores[id].gas = localStorage.getItem(k) || '';
     }
   } catch (e) { say('書き出しに失敗しました：' + e.message); return; }
+    const pick = xferSel.value;
+  Object.keys(stores).forEach(id => { if (id !== pick) delete stores[id]; });
   const skipped = [];
   for (const id of Object.keys(stores)) {
     if (pinRec(id) && !(await askPin(id))) { delete stores[id]; skipped.push(storeLabel(id)); }
