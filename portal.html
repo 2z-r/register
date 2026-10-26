@@ -223,6 +223,28 @@ function dec(text) {
   try { return JSON.parse(decodeURIComponent(escape(atob(t.slice(XFER_PREFIX.length))))); }
   catch (e) { throw new Error('文字列が途中で切れているか、壊れています（コピーし直してください）'); }
 }
+ const XFER_PREFIX2 = 'REGISTER2:';
+function u8ToB64url(u8) { let s = ''; u8.forEach(b => { s += String.fromCharCode(b); }); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+function b64urlToU8(t) { t = t.replace(/-/g, '+').replace(/_/g, '/'); while (t.length % 4) t += '='; const s = atob(t); const u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; }
+async function pipeBytes(u8, stream) { const out = new Blob([u8]).stream().pipeThrough(stream); return new Uint8Array(await new Response(out).arrayBuffer()); }
+async function encZ(obj) {
+  try {
+    if (typeof CompressionStream === 'undefined') return enc(obj);
+    const raw = new TextEncoder().encode(JSON.stringify(obj));
+    const z = await pipeBytes(raw, new CompressionStream('deflate-raw'));
+    return XFER_PREFIX2 + u8ToB64url(z);
+  } catch (e) { return enc(obj); }
+}
+async function decZ(text) {
+  const t = String(text || '').replace(/\s+/g, '');
+  if (!t.startsWith(XFER_PREFIX2) && !t.startsWith(XFER_PREFIX)) throw new Error('形式が違います（先頭が REGISTER ではありません）');
+  if (t.startsWith(XFER_PREFIX)) return dec(text);
+  if (typeof DecompressionStream === 'undefined') throw new Error('この端末のブラウザは、新しい形式に対応していません');
+  try {
+    const u = await pipeBytes(b64urlToU8(t.slice(XFER_PREFIX2.length)), new DecompressionStream('deflate-raw'));
+    return JSON.parse(new TextDecoder().decode(u));
+  } catch (e) { throw new Error('文字列が途中で切れているか、壊れています（コピーし直してください）'); }
+}
 function validProducts(a) {
   return Array.isArray(a) && a.length > 0 && a.length <= 200 && a.every(p =>
     p && Number.isInteger(p.id) && typeof p.name === 'string' && p.name.length <= 100 && Number.isFinite(p.price));
@@ -261,7 +283,7 @@ xferSel.addEventListener('change', () => { document.getElementById('xfer-out').v
   }
   const ids = Object.keys(stores);
   if (!ids.length) { say(skipped.length ? 'PINが確認できなかったため、書き出せる店舗がありません。' : '書き出せる設定がありません。先に、店舗のレジで商品やURLを設定してください。'); return; }
-  document.getElementById('xfer-out').value = enc({ v: 1, stores });
+  document.getElementById('xfer-out').value = await encZ({ v: 1, stores });
   say('書き出しました（' + ids.map(storeLabel).join('・') + '）。「コピー」を押して、別の端末に送ってください。'
     + (skipped.length ? '\n※PINが確認できなかった店舗は含めていません：' + skipped.join('、') : ''));
 });
@@ -280,7 +302,7 @@ document.getElementById('xfer-copy').addEventListener('click', async () => {
 });
 document.getElementById('xfer-import').addEventListener('click', async () => {
   let data;
-  try { data = dec(document.getElementById('xfer-in').value); }
+  try { data = await decZ(document.getElementById('xfer-in').value); }
   catch (e) { say('読み込めません：' + (e.message || '文字列が壊れています') + '\n何も変更していません。'); return; }
   if (!data || data.v !== 1 || !data.stores || typeof data.stores !== 'object') { say('読み込めません：内容が正しくありません。\n何も変更していません。'); return; }
 
@@ -328,7 +350,7 @@ document.getElementById('xfer-import').addEventListener('click', async () => {
   if (!h) return;
   let t = '';
   try { t = decodeURIComponent(h); } catch (e) { return; }
-  if (!t.startsWith(XFER_PREFIX)) return;
+  if (!t.startsWith('REGISTER')) return;
   const inp = document.getElementById('xfer-in');
   inp.value = t;
   inp.closest('details').open = true;
