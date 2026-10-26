@@ -3,7 +3,7 @@
 // ・以降は保存済みのファイルを先に表示し、裏で最新版を取得（次回起動から反映）
 // ・?store=a など URL の「?」以降は無視して同じ index.html を返す
 // ★ HTML・アイコンなどを更新したら、下の VERSION を書き換えてください（例: v3）
-const VERSION = 'v18';
+const VERSION = 'v19';
 const CACHE = 'register-' + VERSION;
 
 const SCOPE = self.registration.scope;               // 例: https://example.com/app/
