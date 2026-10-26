@@ -81,6 +81,7 @@
       <button type="button" id="xfer-export">書き出す</button>
       <textarea id="xfer-out" readonly placeholder="ここに表示されます"></textarea>
       <button type="button" id="xfer-copy">コピー</button>
+      <button type="button" id="xfer-link" style="margin-left:8px;">リンクをコピー</button>
       <h2>読み込む</h2>
       <p>別の端末で書き出した文字列を貼り付けて読み込みます。同じ店舗の商品構成・連携URL・PINが<b>置き換わります</b>。すでに履歴がある店舗は、集計がずれるため読み込みません。</p>
       <textarea id="xfer-in" placeholder="書き出した文字列を貼り付け"></textarea>
@@ -264,6 +265,13 @@ xferSel.addEventListener('change', () => { document.getElementById('xfer-out').v
   say('書き出しました（' + ids.map(storeLabel).join('・') + '）。「コピー」を押して、別の端末に送ってください。'
     + (skipped.length ? '\n※PINが確認できなかった店舗は含めていません：' + skipped.join('、') : ''));
 });
+document.getElementById('xfer-link').addEventListener('click', async () => {
+  const ta = document.getElementById('xfer-out');
+  if (!ta.value) { say('先に「書き出す」を押してください。'); return; }
+  const url = location.origin + location.pathname + '#' + encodeURIComponent(ta.value);
+  try { await navigator.clipboard.writeText(url); say('リンクをコピーしました。相手に送ってください。\n※連携URLが入っているので、個人宛てに送り、グループには貼らないでください。'); }
+  catch (e) { say('コピーできませんでした。「コピー」で文字列をコピーしてください。'); }
+});
 document.getElementById('xfer-copy').addEventListener('click', async () => {
   const ta = document.getElementById('xfer-out');
   if (!ta.value) { say('先に「書き出す」を押してください。'); return; }
@@ -315,6 +323,18 @@ document.getElementById('xfer-import').addEventListener('click', async () => {
     refreshPinStatus();
   } catch (e) { say('保存に失敗しました：' + e.message); }
 });
+(function () {
+  const h = location.hash.slice(1);
+  if (!h) return;
+  let t = '';
+  try { t = decodeURIComponent(h); } catch (e) { return; }
+  if (!t.startsWith(XFER_PREFIX)) return;
+  const inp = document.getElementById('xfer-in');
+  inp.value = t;
+  inp.closest('details').open = true;
+  say('リンクから設定を受け取りました。下の「読み込む」を押してください。');
+  history.replaceState(null, '', location.pathname);
+})();
 </script>
 </body>
 </html>
