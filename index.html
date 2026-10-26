@@ -175,6 +175,13 @@
   .tap-grid button:active { background: var(--border); }
   .tap-grid button.tap-exact { background: var(--accent); border-color: var(--accent); color: #fff; }
   .tap-grid button.tap-sub { grid-column: span 2; padding: 18px 0; font-size: 16px; font-weight: 700; color: var(--text-muted); }
+  .register-page { grid-template-rows: minmax(0, 1fr) auto; }
+  .cart-list { overflow-y: auto; max-height: 30vh; -webkit-overflow-scrolling: touch; }
+  @media (min-width: 768px) {
+   .checkout-panel { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
+  .checkout-panel > * { flex-shrink: 0; }
+    .checkout-panel > .cart-list { flex: 1 1 auto; min-height: 110px; max-height: none; }
+  }
   .change-row .cr-val { font-size: 28px; }
 
   /* ── Product manager ── */
