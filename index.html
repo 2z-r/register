@@ -183,6 +183,18 @@
     .checkout-panel > .cart-list { flex: 1 1 auto; min-height: 110px; max-height: none; }
   }
   .change-row .cr-val { font-size: 28px; }
+    /* カート改善：A（色づけ）・C（点数と合計を1行／預かり5列×2段） */
+  .cart-list { position: relative; }
+  @keyframes cartflash { from { background: var(--accent-bg); } to { background: transparent; } }
+  .cart-item.flash { animation: cartflash 1.2s ease-out; }
+  .totals-grid { margin-bottom: 8px; }
+  .tot-cell { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; }
+  .tot-label { margin-bottom: 0; }
+  .grand-total { padding: 9px 16px; margin-bottom: 8px; }
+  .tap-head { padding: 6px 12px; margin-bottom: 6px; }
+  .tap-val { font-size: 26px; }
+  .tap-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+  .tap-grid button, .tap-grid button.tap-sub { grid-column: span 1; padding: 14px 0; font-size: 14px; border-radius: 12px; }
 
   /* ── Product manager ── */
   .pm-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow); margin-bottom: 14px; }
@@ -678,10 +690,12 @@ function renderProducts() {
   }).join('');
 }
 
-function addToCart(id) { cart[id] = (cart[id]||0)+1; renderCart(); }
+var lastAddedId = null;   // 直前に足した商品（カートで色を付け、見える位置までスクロールする）
+function addToCart(id) { cart[id] = (cart[id]||0)+1; lastAddedId = id; renderCart(); }
 function changeQty(id, d) {
   cart[id] = (cart[id]||0)+d;
   if (cart[id] <= 0) delete cart[id];
+    lastAddedId = d > 0 ? id : null;
   renderCart();
 }
 
@@ -694,7 +708,7 @@ function renderCart() {
     const p=PRODUCTS.find(x=>x.id==id), q=cart[id];
     if (p.price >= 0) qty+=q;   // 値引き（マイナス価格）は点数に数えない
     sub+=p.price*q;
-    html+=`<div class="cart-item">
+      html+=`<div class="cart-item${String(id)===String(lastAddedId)?' flash':''}">
       <span class="ci-name">${p.name}</span>
       <div class="qty-ctrl">
         <button class="qty-btn" onclick="changeQty(${id},-1)">−</button>
@@ -704,7 +718,13 @@ function renderCart() {
       <span class="ci-price">${yen((p.price*q))}</span>
     </div>`;
   });
-  list.innerHTML = html;
+    list.innerHTML = html;
+  const fl = list.querySelector('.flash');
+  if (fl) {
+    if (fl.offsetTop < list.scrollTop) list.scrollTop = fl.offsetTop;
+    else if (fl.offsetTop + fl.offsetHeight > list.scrollTop + list.clientHeight) list.scrollTop = fl.offsetTop + fl.offsetHeight - list.clientHeight;
+  }
+  lastAddedId = null;
   updateTotals(qty, sub);
 }
 
