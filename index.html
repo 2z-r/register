@@ -52,6 +52,13 @@
   .app-title { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
   .header-date { font-size: 13px; color: var(--text-muted); }
   .header-stat { font-size: 13px; color: var(--accent-text); background: var(--accent-bg); padding: 4px 10px; border-radius: 20px; font-weight: 500; }
+    /* ヘッダー：ポータルへ・タイトル・日付を1行に並べて、日付が見切れないようにする */
+  .app-header { height: auto; min-height: 56px; padding: 6px 16px; gap: 12px; }
+  .app-header > div:first-child { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 14px; min-width: 0; }
+  .back-link { margin-bottom: 0; white-space: nowrap; }
+  .app-title { white-space: nowrap; }
+  .header-date { white-space: nowrap; }
+  .header-stat { white-space: nowrap; flex-shrink: 0; }
   .tab-pages { flex: 1; overflow: hidden; position: relative; }
   .tab-page { display: none; height: 100%; overflow-y: auto; }
   .tab-page.active { display: block; }
