@@ -34,6 +34,8 @@
   .tile:active { transform: scale(.98); filter: brightness(.95); }
   .tile .mark { font-size: 64px; font-weight: 700; line-height: 1; }
   .tile .name { font-size: 22px; font-weight: 600; }
+   .tile { position: relative; overflow: hidden; }
+  .tile.has-img img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
   footer { padding: 12px 24px 20px; font-size: 13px; color: var(--muted); text-align: center; }
   #offline-status.ok { color: #276749; }
   details.xfer { margin: 14px auto 0; max-width: 560px; text-align: left; background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px; }
@@ -93,8 +95,8 @@
 <script>
 // 店舗を増やすときは、ここに1行足すだけ（id はデータの保存先の区別に使われる。あとから変えると別データ扱いになるので注意）
 const STORES = [
-  { id: 'a', label: '店舗A', mark: 'A', color: '#C05621' },
-  { id: 'b', label: '店舗B', mark: 'B', color: '#2F855A' },
+  { id: 'a', label: '店舗A', mark: 'A', color: '#C05621' , img: 'store-a.jpg' },
+  { id: 'b', label: '店舗B', mark: 'B', color: '#2F855A' , img: 'store-b.jpg' },
 ];
 
 const grid = document.getElementById('grid');
@@ -103,9 +105,19 @@ STORES.forEach(s => {
   a.className = 'tile';
   a.style.background = s.color;
   a.href = 'index.html?store=' + encodeURIComponent(s.id) + '&label=' + encodeURIComponent(s.label);
-  a.innerHTML = '<div class="mark"></div><div class="name"></div>';
-  a.querySelector('.mark').textContent = s.mark;
-  a.querySelector('.name').textContent = s.label;
+   if (s.img) {
+    a.classList.add('has-img');
+    a.setAttribute('aria-label', s.label);
+    const im = document.createElement('img');
+    im.alt = s.label;
+    im.onerror = () => { im.remove(); a.classList.remove('has-img'); a.innerHTML = '<div class="mark">' + s.mark + '</div><div class="name">' + s.label + '</div>'; };
+    im.src = s.img;
+    a.appendChild(im);
+  } else {
+    a.innerHTML = '<div class="mark"></div><div class="name"></div>';
+    a.querySelector('.mark').textContent = s.mark;
+    a.querySelector('.name').textContent = s.label;
+  }
   grid.appendChild(a);
 });
 
