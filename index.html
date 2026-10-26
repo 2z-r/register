@@ -603,12 +603,22 @@ function loadData() {
 }
 function getGasUrl() { return localStorage.getItem(GAS_KEY) || ''; }
 function saveGasUrl() {
-  const val = document.getElementById('gas-url-input').value.trim();
+  const inp = document.getElementById('gas-url-input');
+  const val = inp.value.trim();
+  if (!val) { alert(getGasUrl() ? 'URLが入力されていません。今のURLはそのまま残しています。' : '連携URLを入力してください。'); return; }
+  if (!/^https:\/\//.test(val)) { alert('URLは https:// で始まる必要があります。'); return; }
+  if (getGasUrl() && prompt('連携URLを置き換えます。続けるには「変更」と入力してください。') !== '変更') return;
   localStorage.setItem(GAS_KEY, val);
+  inp.value = '';
+  showGasState();
   const msg = document.getElementById('url-saved-msg');
   msg.style.display = 'inline';
   setTimeout(() => { msg.style.display = 'none'; }, 2000);
   updateUrlWarning();
+}
+function showGasState() {
+  const inp = document.getElementById('gas-url-input');
+  inp.placeholder = getGasUrl() ? '✓ 連携URLは設定済みです（変更するときだけ、新しいURLを貼り付け）' : 'https://script.google.com/macros/s/...';
 }
 function updateUrlWarning() {
   document.getElementById('url-warning').style.display = getGasUrl() ? 'none' : 'block';
@@ -622,7 +632,7 @@ if (STORE_LABEL) document.getElementById('app-title').textContent = 'レジ（' 
 loadProducts();
 loadData();
 const savedUrl = getGasUrl();
-if (savedUrl) document.getElementById('gas-url-input').value = savedUrl;
+showGasState();
 loadCartState();
 renderCart();
 updateUrlWarning();
