@@ -202,7 +202,11 @@
   .tap-val { font-size: 26px; }
   .tap-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
   .tap-grid button, .tap-grid button.tap-sub { grid-column: span 1; padding: 14px 0; font-size: 14px; border-radius: 12px; }
-
+  .tap-grid button.tap-sub { grid-column: span 2; }
+  .tap-head .tap-val { margin: 0 auto 0 12px; }
+  .tap-clear { padding: 6px 14px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface2); color: var(--text-muted); font-size: 14px; font-weight: 700; cursor: pointer; }
+  .tap-clear:active { background: var(--border); }
+  
   /* ── Product manager ── */
   .pm-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow); margin-bottom: 14px; }
   .pm-row { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
@@ -339,6 +343,7 @@
   <div class="tap-head">
     <span class="tap-label">預かり</span>
     <span class="tap-val" id="tap-val">¥0</span>
+    <button class="tap-clear" onclick="payClear()">×消す</button>
   </div>
   <div class="tap-grid">
     <button class="tap-exact" onclick="payExact()">ちょうど</button>
@@ -350,7 +355,7 @@
     <button onclick="payAdd(50)">¥50</button>
     <button onclick="payAdd(10)">¥10</button>
     <button class="tap-sub" onclick="payUndo()">1つ戻す</button>
-    <button class="tap-sub" onclick="payClear()">クリア</button>
+   
   </div>
 </div>
           <div class="change-row ok" id="change-row" style="display:none;">
@@ -358,7 +363,7 @@
             <span class="cr-val" id="change-val">¥0</span>
           </div>
           <div class="action-row">
-            <button class="btn-clear" onclick="clearCart()">クリア</button>
+            <button class="btn-clear" onclick="clearCart()">カートを空に</button>
             <button class="btn-pay" onclick="checkout()">会計する</button>
           </div>
         </div>
